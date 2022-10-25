@@ -1,0 +1,73 @@
+---
+title: "block_to_TAZ_vehicles"
+author: "Joe Delorto"
+format: html
+editor: visual
+---
+
+This notebook will allocate ACS household vehicle ownership data from the block level to the TDM19 transportation analysis zone (TAZ) level. This will enable more complete EJ analysis of TDM19 model runs.
+
+```{r setup}
+library(tidycensus)
+library(tidyverse)
+```
+
+```{r variables}
+vars <- load_variables(2010,"sf1")
+```
+
+```{r read_population}
+taz_2010block_allocation <- read.csv("data/base/taz_2010block_allocation.csv")
+taz_2010block_assignment <- read.csv("data/base/taz_2010block_assignment.csv")
+
+taz_2010block_correspondence <- read.csv("data/base/sw_taz_ma_block2010_taz_correspondence.csv")
+
+population_block <- get_decennial(geography = "block",
+                                  variables = "P001001",
+                                  year = 2010,
+                                  state = "MA")
+```
+
+This block is the first checkpoint just to make sure that my allocations are correct at the most basic level: total population.
+
+```{r process_population}
+taz_2010block_correspondence$STATE10  <- as.character(taz_2010block_correspondence$STATE10)
+taz_2010block_correspondence$COUNTY10 <- as.character(taz_2010block_correspondence$COUNTY10)
+taz_2010block_correspondence$TRACT10  <- as.character(taz_2010block_correspondence$TRACT10)
+taz_2010block_correspondence$BLOCK10  <- as.character(taz_2010block_correspondence$BLOCK10)
+
+taz_2010block_correspondence$STATE10  <- str_pad(taz_2010block_correspondence$STATE10,
+                                                 width = 2,
+                                                 side = "left",
+                                                 pad = "0")
+taz_2010block_correspondence$COUNTY10 <- str_pad(taz_2010block_correspondence$COUNTY10,
+                                                 width = 3,
+                                                 side = "left",
+                                                 pad = "0")
+taz_2010block_correspondence$TRACT10  <- str_pad(taz_2010block_correspondence$TRACT10,
+                                                 width = 6, 
+                                                 side = "left",
+                                                 pad = "0")
+taz_2010block_correspondence$BLOCK10  <- str_pad(taz_2010block_correspondence$BLOCK10,
+                                                 width = 4,
+                                                 side = "left",
+                                                 pad = "0")
+
+taz_2010block_correspondence$GEOID <- paste(taz_2010block_correspondence$STATE10,
+                                            taz_2010block_correspondence$COUNTY10,
+                                            taz_2010block_correspondence$TRACT10,
+                                            taz_2010block_correspondence$BLOCK10,
+                                            sep = "")
+
+pop_TAZ_by_block <- inner_join(taz_2010block_correspondence, population_block)
+
+write_csv(pop_TAZ_by_block, "data/processed/pop_TAZ_by_block.csv")
+
+rnd <- function(x) {trunc(x+sign(x)*0.5)}     ## rounding function
+
+population_TAZ <- pop_TAZ_by_block %>%
+  group_by(TAZ) %>%
+  summarize(population = round(sum(POP_FCT * value)))
+
+write_csv(population_TAZ, "output/data/population_TAZ.csv")
+```
