@@ -1,0 +1,76 @@
+---
+title: "Merging Blocks and TAZs"
+author: "Author Goes Here"
+date: "`r Sys.Date()`"
+format: 
+  html: 
+    self-contained: true
+editor: visual
+---
+
+## Goal
+
+We want a way to allocate census information into TAZs. TAZs are made up of census blocks, but sometimes split the blocks. We want to create a table that gives us a way to allocate census factors into TAZs.
+
+### Set up Packages
+
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(tigris)
+```
+
+## Load shapes
+
+```{r}
+ #Load TAZ shapes
+# Load census block groups (other geography) tigris::block_groups()
+# intersect them
+# bring in building footprints
+# find number of structures in each intersection
+# also want to do share of land area--remove water?
+# summarize
+# output
+
+cbtrue <- tigris::tracts(state = "MA", cb = TRUE, year = 2020)
+# cbfalse <- tigris::tracts(state = "MA", cb = FALSE, year = 2020)
+
+mapview::mapview(cbtrue) 
+
+ggplot(cbtrue |> sf::st_drop_geometry(), aes(x = ALAND, y = AWATER)) + 
+         geom_jitter()
+#+ mapview::mapview(cbfalse, col.regions = "red")
+
+# massgis census: https://www.mass.gov/info-details/massgis-data-2020-us-census
+
+# problems that might come up. TAZ to census boundaries might be different (like microscopically different).
+
+# find out which "block" shapes are used to create TAZs
+# tiger/cartographic/state via massGIS.
+
+# SPA give the TAZ geometry.
+```
+
+## Perform Intersections
+
+```{r}
+
+```
+
+## Look at Rooftop Share
+
+```{r}
+
+```
+
+## Look at Area Share
+
+```{r}
+
+```
+
+## Test allocating minority status
+
+```{r}
+
+```

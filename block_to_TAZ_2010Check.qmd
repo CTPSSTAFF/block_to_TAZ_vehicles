@@ -17,10 +17,11 @@ vars <- load_variables(2010,"sf1")
 ```
 
 ```{r read_population}
-taz_2010block_allocation <- read.csv("data/base/taz_2010block_allocation.csv")
+# taz_2010block_allocation <- read.csv("data/base/taz_2010block_allocation.csv")
+# 
+# taz_2010block_assignment <- read.csv("data/base/taz_2010block_assignment.csv")
 
-taz_2010block_assignment <- read.csv("data/base/taz_2010block_assignment.csv")
-
+# J:\Shared drives\TMD_TSA\Data\GIS Data\correspondence_tables\archive\
 taz_2010block_correspondence <- read.csv("data/base/sw_taz_ma_block2010_taz_correspondence.csv")
 
 # Do this once then store as an RDS for quick loading.
@@ -72,3 +73,15 @@ population_TAZ <- pop_TAZ_by_block %>%
 
 write_csv(population_TAZ, "output/data/population_TAZ.csv")
 ```
+
+Let's read in what we think our "answer" should be: 
+```{r}
+# This is does not contain a population. 
+# tdm19_taz_file <- read_csv("J:/Shared drives/TMD_TSA/Data/GIS Data/correspondence_tables/tdm19_taz_file.csv", show_col_types = FALSE)
+
+# This is ostensibly the target spreadsheet?
+target <- read_csv("./data/processed/pop_TAZ_by_block_assigned.csv", show_col_types = FALSE) |> 
+  group_by(taz_id) |> 
+  summarize(sum(value))
+```
+
