@@ -24,6 +24,7 @@ library(tigris)
 
 ```{r}
  #Load TAZ shapes
+TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg")
 # Load census block groups (other geography) tigris::block_groups()
 # intersect them
 # bring in building footprints
