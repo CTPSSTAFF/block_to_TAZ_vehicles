@@ -28,7 +28,8 @@ library(sf)
 #| results: hide
  
 #Load TAZ shapes
-TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg")
+TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg") %>% 
+  st_transform(26986)
 # Load census block groups (other geography) tigris::block_groups()
 # intersect them
 # bring in building footprints
@@ -37,8 +38,10 @@ TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/g
 # summarize
 # output
 
-cbtrue <- tigris::tracts(state = "MA", cb = TRUE, year = 2020)
-cbfalse <- tigris::tracts(state = "MA", cb = FALSE, year = 2020)
+cbtrue <- tigris::tracts(state = "MA", cb = TRUE, year = 2020)%>% 
+  st_transform(26986)
+cbfalse <- tigris::tracts(state = "MA", cb = FALSE, year = 2020) %>% 
+  st_transform(26986)
 
 mapview(cbfalse) + mapview(TAZ, col.regions = "red") + mapview(cbtrue, col.regions = "yellow")
 
@@ -67,6 +70,13 @@ rooftops <- read_rds("data/processed/rooftops.rds")
 ```
 
 ## Perform Intersections
+
+### Intersections
+
+```{r}
+intersections <- st_intersection(TAZ, cbfalse)
+mapview(head(intersections,100))
+```
 
 ### Look at Rooftop Share
 
