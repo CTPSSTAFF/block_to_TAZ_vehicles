@@ -18,6 +18,8 @@ We want a way to allocate census information into TAZs. TAZs are made up of cens
 library(tidyverse)
 library(tidycensus)
 library(tigris)
+library(mapview)
+library(sf)
 ```
 
 ## Load shapes
@@ -36,17 +38,25 @@ TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/g
 # output
 
 cbtrue <- tigris::tracts(state = "MA", cb = TRUE, year = 2020)
-# cbfalse <- tigris::tracts(state = "MA", cb = FALSE, year = 2020)
+cbfalse <- tigris::tracts(state = "MA", cb = FALSE, year = 2020)
 
-mapview::mapview(cbtrue) 
+mapview(cbfalse) + mapview(TAZ, col.regions = "red") + mapview(cbtrue, col.regions = "yellow")
 
-ggplot(cbtrue |> sf::st_drop_geometry(), aes(x = ALAND, y = AWATER)) + 
-         geom_jitter()
-#+ mapview::mapview(cbfalse, col.regions = "red")
 
 # massgis census: https://www.mass.gov/info-details/massgis-data-2020-us-census
 
 #massgis rooftops: https://www.mass.gov/info-details/massgis-data-building-structures-2-d
+# rooftops <- st_read("data/base/STRUCTURES_POLY.shp")
+ 
+# subset <- head(rooftops, 10)
+# mapview(cbfalse) + mapview(subset)
+# 
+# saveRDS(rooftops, "data/processed/rooftops.rds")
+
+rooftops <- read_rds("data/processed/rooftops.rds")
+
+
+
 
 # problems that might come up. TAZ to census boundaries might be different (like microscopically different).
 

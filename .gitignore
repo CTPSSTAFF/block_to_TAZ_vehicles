@@ -2,3 +2,12 @@
 .Rhistory
 .RData
 .Ruserdata
+*.cpg
+*.dbf
+*.prj
+*.sbn
+data/base/STRUCTURES_POLY.sbx
+data/base/STRUCTURES_POLY.shp
+data/base/STRUCTURES_POLY.shp.xml
+data/base/STRUCTURES_POLY.shx
+data/processed/rooftops.rds
