@@ -5,7 +5,7 @@ format: html
 editor: visual
 ---
 
-This notebook will allocate ACS household vehicle ownership data from the block level to the TDM19 transportation analysis zone (TAZ) level. This will enable more complete EJ analysis of TDM19 model runs.
+The purpose of this notebook is to confirm whether we can multiply the factors developed in the existing TAZ-blk spreadsheets to get the same TAZ populations that appear in source data.
 
 ```{r setup}
 library(tidycensus)
