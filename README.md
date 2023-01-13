@@ -7,6 +7,9 @@ We want to do this for modern census data. The census blocks may have changed an
 
 We need to find *NEW* allocation percentages to go from a census block to a TAZ. 
 
+Useful links:
+Old work: "J:\Shared drives\TMD_TSA\Data\GIS Data\correspondence_tables"
+
 Step 1:
 Try to match the old process.
 General steps: 
