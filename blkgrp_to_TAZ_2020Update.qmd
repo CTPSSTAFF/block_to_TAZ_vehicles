@@ -23,7 +23,9 @@ library(tigris)
 ## Load shapes
 
 ```{r}
- #Load TAZ shapes
+#| results: hide
+ 
+#Load TAZ shapes
 TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg")
 # Load census block groups (other geography) tigris::block_groups()
 # intersect them
@@ -44,6 +46,8 @@ ggplot(cbtrue |> sf::st_drop_geometry(), aes(x = ALAND, y = AWATER)) +
 
 # massgis census: https://www.mass.gov/info-details/massgis-data-2020-us-census
 
+#massgis rooftops: https://www.mass.gov/info-details/massgis-data-building-structures-2-d
+
 # problems that might come up. TAZ to census boundaries might be different (like microscopically different).
 
 # find out which "block" shapes are used to create TAZs
@@ -54,23 +58,21 @@ ggplot(cbtrue |> sf::st_drop_geometry(), aes(x = ALAND, y = AWATER)) +
 
 ## Perform Intersections
 
-```{r}
-
-```
-
-## Look at Rooftop Share
+### Look at Rooftop Share
 
 ```{r}
 
 ```
 
-## Look at Area Share
+### Look at Area Share
 
 ```{r}
 
 ```
 
-## Test allocating minority status
+## Testing
+
+### Test minority share
 
 ```{r}
 
