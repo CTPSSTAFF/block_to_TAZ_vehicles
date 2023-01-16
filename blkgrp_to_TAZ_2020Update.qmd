@@ -29,8 +29,10 @@ library(sf)
  
 #Load TAZ shapes
 TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg") %>% 
-  st_transform(26986)
-# Load census block groups (other geography) tigris::block_groups()
+  st_transform(26986) %>% 
+  filter(STATE == "MA") #%>% # Filtering to only in MA
+TAZ$TAZ_area <- st_area(TAZ)
+  #filter(ID == 4398) # Filtering for one example
 # intersect them
 # bring in building footprints
 # find number of structures in each intersection
@@ -38,25 +40,26 @@ TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/g
 # summarize
 # output
 
-cbtrue <- tigris::tracts(state = "MA", cb = TRUE, year = 2020)%>% 
+
+# Load census block groups (other geography) tigris::block_groups()
+cbtrue <- tigris::block_groups(state = "MA", cb = TRUE, year = 2020)%>% 
   st_transform(26986)
-cbfalse <- tigris::tracts(state = "MA", cb = FALSE, year = 2020) %>% 
+cbfalse <- tigris::block_groups(state = "MA", cb = FALSE, year = 2020) %>% 
   st_transform(26986)
 
-mapview(cbfalse) + mapview(TAZ, col.regions = "red") + mapview(cbtrue, col.regions = "yellow")
+#mapview(cbfalse) + mapview(TAZ, col.regions = "red") #+ mapview(cbtrue, col.regions = "yellow")
+
+# cbfalse looks like it more closely follows the TAZ geometry
 
 
 # massgis census: https://www.mass.gov/info-details/massgis-data-2020-us-census
 
 #massgis rooftops: https://www.mass.gov/info-details/massgis-data-building-structures-2-d
 # rooftops <- st_read("data/base/STRUCTURES_POLY.shp")
- 
-# subset <- head(rooftops, 10)
-# mapview(cbfalse) + mapview(subset)
 # 
 # saveRDS(rooftops, "data/processed/rooftops.rds")
 
-rooftops <- read_rds("data/processed/rooftops.rds")
+
 
 
 
@@ -75,13 +78,48 @@ rooftops <- read_rds("data/processed/rooftops.rds")
 
 ```{r}
 intersections <- st_intersection(TAZ, cbfalse)
-mapview(head(intersections,100))
+intersections$intersect_area <- st_area(intersections)
+# Trying it out with a subset
+# ss_intersection <- intersections %>% 
+#   filter(ID == 4398) %>% 
+#   st_as_sf() 
+# ss_intersection$area <- st_area(ss_intersection)
+# ss_intersection$pct_intersect <- ss_intersection$area / max(ss_intersection$area)
+# 
+# ss_intersection_final <- ss_intersection %>% 
+#   filter(as.vector(pct_intersect) > 0.01)
+# 
+# plot(st_geometry(ss_intersection_final))
+
+# Only keeping intersection areas for a TAZ that is at least 1% of the TAZ area 
+# (could also make it 1% of the largest intersection area)
+intersections_clean <- intersections %>% 
+  group_by(ID) %>% 
+  mutate(pct_intersect = intersect_area / TAZ_area ) %>% 
+  filter(as.vector(pct_intersect) > 0.01) %>% 
+  ungroup()
+
 ```
 
 ### Look at Rooftop Share
 
 ```{r}
+rooftops <- read_rds("data/processed/rooftops.rds")
+plot(st_geometry(head(rooftops,1)))
 
+#intersecting the rooftops with the census block groups
+roofs_in_bg <- st_intersection(cbfalse, rooftops)
+
+# finding the number of rooftops in each census block group
+num_rooftops <- roofs_in_bg %>% 
+  group_by(GEOID) %>% 
+  mutate(num_roof = n()) %>%  
+  distinct(GEOID, num_roof)
+# Note: the number of census block groups goes from 5116 to 5110, meaning there are 6 block groups with no rooftops.  Also does not take into account if there are rooftops that intersect multiple blockgroups.  For some reason, there are less unique IDs in roofs_in_cb than there are in rooftops, but the sum in num_rooftops is the same as the number of entries in roofs_in_cb
+
+
+saveRDS(roofs_in_bg, "data/processed/rooftops_in_bg.rds")
+saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
 ```
 
 ### Look at Area Share
@@ -95,5 +133,14 @@ mapview(head(intersections,100))
 ### Test minority share
 
 ```{r}
+minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
 
 ```
+
+Thoughts:
+
+-   some TAZs are smaller than blockgroups, how would we account for the census data in that situation, or does it make a difference?![](images/image-1162217448.png)
+
+-   There are 17,000 intersection areas, meaning that the boundaries probably don't add up. Brought it down to 8843 by taking out the smallest intersection areas
+
+-   Anything with the rooftops takes a very long time
