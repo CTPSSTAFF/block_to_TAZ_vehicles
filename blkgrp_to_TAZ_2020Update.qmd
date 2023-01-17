@@ -102,8 +102,8 @@ mapview(blk_groups_land) + mapview(TAZ_land, col.regions = "red")
 
 ```{r}
 intersections <- st_intersection(TAZ_land, blk_groups_land) %>% 
-  rowid_to_column("Intersection_ID") %>% 
-  st_collection_extract("POLYGON")
+  st_collection_extract("POLYGON") %>% 
+  rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
 intersections$intersect_area <- st_area(intersections)
 
 mapview(TAZ_land, col.regions = "red") + mapview(blk_groups_land) + mapview(intersections, zcol = "Intersection_ID")
