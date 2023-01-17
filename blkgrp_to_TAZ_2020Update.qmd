@@ -72,13 +72,43 @@ cbfalse <- tigris::block_groups(state = "MA", cb = FALSE, year = 2020) %>%
 # SPA give the TAZ geometry.
 ```
 
+## Only Looking at Plymouth County
+
+```{r}
+TAZ_ply <- TAZ %>% 
+  filter(COUNTY == "Plymouth MA")
+
+blk_group_ply <- cbfalse %>% 
+  filter(COUNTYFP == "023")
+```
+
+### Taking out the Water Area
+
+```{r}
+
+TAZ_land <- tigris::erase_water(TAZ_ply, area_threshold = 0.5, year = 2020)
+
+blk_groups_land <- tigris::erase_water(blk_group_ply, area_threshold = 0.5, year = 2020)
+mapview(blk_groups_land) + mapview(TAZ_land, col.regions = "red")
+
+
+#tigris::area_water()
+# maybe break down at the county level
+```
+
 ## Perform Intersections
 
 ### Intersections
 
 ```{r}
-intersections <- st_intersection(TAZ, cbfalse)
+intersections <- st_intersection(TAZ_land, blk_groups_land) %>% 
+  rowid_to_column("Intersection_ID") %>% 
+  st_collection_extract("POLYGON")
 intersections$intersect_area <- st_area(intersections)
+
+mapview(TAZ_land, col.regions = "red") + mapview(blk_groups_land) + mapview(intersections, zcol = "Intersection_ID")
+
+
 # Trying it out with a subset
 # ss_intersection <- intersections %>% 
 #   filter(ID == 4398) %>% 
@@ -91,14 +121,20 @@ intersections$intersect_area <- st_area(intersections)
 # 
 # plot(st_geometry(ss_intersection_final))
 
+
+
+
+
 # Only keeping intersection areas for a TAZ that is at least 1% of the TAZ area 
 # (could also make it 1% of the largest intersection area)
-intersections_clean <- intersections %>% 
-  group_by(ID) %>% 
-  mutate(pct_intersect = intersect_area / TAZ_area ) %>% 
-  filter(as.vector(pct_intersect) > 0.01) %>% 
-  ungroup() %>% 
-  rowid_to_column("Intersection_ID")
+# intersections_clean <- intersections %>% 
+#   group_by(ID) %>% 
+#   mutate(pct_intersect = intersect_area / TAZ_area ) %>% 
+#   filter(as.vector(pct_intersect) > 0.01) %>% 
+#   ungroup() 
+
+x <- head(intersections_clean, 20)
+mapview(x, zcol = "GEOID") + mapview(TAZ_land, col.regions = "red") + mapview(blk_groups_land, col.regions = "yellow")
 
 ```
 
@@ -111,6 +147,9 @@ intersections_2 <- st_join(TAZ, cbfalse,
 mapview(intersections_2) + mapview(TAZ)
 
 # This method is not correct because it only pairs one TAZ with one block group, and also does not result in the geometry of the intersection, only the TAZ
+
+
+
 ```
 
 ### Look at Rooftop Share
@@ -137,7 +176,7 @@ saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
 
 roofs_in_intersect <- st_join(intersections_clean, rooftops)
 
-# This below ran for 15+ minutes and then crashed
+# This below is taking too long to run
 num_rooftops_intersect <- roofs_in_intersect %>% 
   group_by(Intersection_ID) %>% 
   mutate(num_roof = n()) %>% 
@@ -150,6 +189,9 @@ saveRDS(num_rooftops_intersect, "data/processed/num_rooftops_intersect.rds")
 ### Look at Area Share
 
 ```{r}
+# First step is to separate out water area in each of the intersections to determine what percentage of block group area should be applied to the population for that block group
+
+# Then, for each TAZ, the population of the intersected block groups should be added up.
 
 ```
 
