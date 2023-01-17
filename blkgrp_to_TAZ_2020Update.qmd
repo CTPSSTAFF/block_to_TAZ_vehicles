@@ -97,8 +97,20 @@ intersections_clean <- intersections %>%
   group_by(ID) %>% 
   mutate(pct_intersect = intersect_area / TAZ_area ) %>% 
   filter(as.vector(pct_intersect) > 0.01) %>% 
-  ungroup()
+  ungroup() %>% 
+  rowid_to_column("Intersection_ID")
 
+```
+
+### Different Method for Doing Intersections
+
+```{r}
+intersections_2 <- st_join(TAZ, cbfalse, 
+                           join = st_intersects, 
+                           largest = TRUE)
+mapview(intersections_2) + mapview(TAZ)
+
+# This method is not correct because it only pairs one TAZ with one block group, and also does not result in the geometry of the intersection, only the TAZ
 ```
 
 ### Look at Rooftop Share
@@ -115,11 +127,24 @@ num_rooftops <- roofs_in_bg %>%
   group_by(GEOID) %>% 
   mutate(num_roof = n()) %>%  
   distinct(GEOID, num_roof)
-# Note: the number of census block groups goes from 5116 to 5110, meaning there are 6 block groups with no rooftops.  Also does not take into account if there are rooftops that intersect multiple blockgroups.  For some reason, there are less unique IDs in roofs_in_cb than there are in rooftops, but the sum in num_rooftops is the same as the number of entries in roofs_in_cb
-
 
 saveRDS(roofs_in_bg, "data/processed/rooftops_in_bg.rds")
 saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
+
+
+
+# Joining the intersection areas with the rooftops that reside inside of them
+
+roofs_in_intersect <- st_join(intersections_clean, rooftops)
+
+# This below ran for 15+ minutes and then crashed
+num_rooftops_intersect <- roofs_in_intersect %>% 
+  group_by(Intersection_ID) %>% 
+  mutate(num_roof = n()) %>% 
+  distinct(Intersection_ID, ID, GEOID, num_roof)
+
+saveRDS(roofs_in_intersect, "data/processed/rooftops_in_intersect.rds")
+saveRDS(num_rooftops_intersect, "data/processed/num_rooftops_intersect.rds")
 ```
 
 ### Look at Area Share
