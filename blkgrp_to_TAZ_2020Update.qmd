@@ -159,7 +159,7 @@ rooftops <- read_rds("data/processed/rooftops.rds")
 plot(st_geometry(head(rooftops,1)))
 
 #intersecting the rooftops with the census block groups
-roofs_in_bg <- st_intersection(cbfalse, rooftops)
+roofs_in_bg <- st_intersection(blk_groups_land, rooftops)
 
 # finding the number of rooftops in each census block group
 num_rooftops <- roofs_in_bg %>% 
@@ -174,7 +174,7 @@ saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
 
 # Joining the intersection areas with the rooftops that reside inside of them
 
-roofs_in_intersect <- st_join(intersections_clean, rooftops)
+roofs_in_intersect <- st_join(intersections, rooftops)
 
 # This below is taking too long to run
 num_rooftops_intersect <- roofs_in_intersect %>% 
