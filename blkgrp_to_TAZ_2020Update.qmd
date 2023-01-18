@@ -154,6 +154,8 @@ mapview(intersections_2) + mapview(TAZ)
 
 ## Look at Rooftop Share
 
+#### Determine the Number of Rooftops in Each Intersection Area
+
 ```{r}
 rooftops <- read_rds("data/processed/rooftops.rds")
 plot(st_geometry(head(rooftops,1)))
@@ -196,6 +198,38 @@ num_rooftops <- roofs_in_intersect %>%
 
 saveRDS(roofs_in_intersect, "data/processed/rooftops_in_intersect.rds")
 saveRDS(num_rooftops, "data/processed/num_rooftops_intersect.rds")
+```
+
+#### Determine the percentage of population that belongs to each intersection in the TAZ based on the number of rooftops
+
+```{r}
+
+# Get population for block groups
+census_pop <- minority %>% 
+  select(c(GEO_ID, P1_001N)) %>% 
+  rename(GEOID = GEO_ID, population_BG = P1_001N)
+census_pop$GEOID <-str_remove_all(census_pop$GEOID, "1500000US")
+
+
+pop_percent <- num_rooftops %>% 
+  group_by(GEOID) %>%
+  # per BG: get percentage of rooftops that are in each intersecting TAZ
+  mutate(population_pct = num_roof / sum(num_roof)) %>% 
+  ungroup() %>% 
+  left_join(census_pop) %>% 
+  # per BG: get population in each intersecting TAZ
+  mutate(population_intersection = population_pct * as.numeric(population_BG)) %>% 
+  group_by(ID) %>% 
+  # per TAZ: add up the population in each intersecting BG
+  mutate(population_TAZ = sum(population_intersection)) %>% 
+  ungroup()
+
+TAZ_pop_rooftops <- pop_percent %>% 
+  distinct(ID, population_TAZ)
+
+TAZ_plot <- TAZ_land %>% 
+  left_join(TAZ_pop_rooftops)
+mapview(TAZ_plot, zcol = "population_TAZ")
 ```
 
 ## Look at Area Share
