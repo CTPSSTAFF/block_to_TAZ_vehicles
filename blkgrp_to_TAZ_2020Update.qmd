@@ -20,6 +20,8 @@ library(tidycensus)
 library(tigris)
 library(mapview)
 library(sf)
+library(units)
+
 ```
 
 ## Load shapes
@@ -60,6 +62,10 @@ cbfalse <- tigris::block_groups(state = "MA", cb = FALSE, year = 2020) %>%
 # saveRDS(rooftops, "data/processed/rooftops.rds")
 
 
+# Load Population Census Data
+# downloaded from: https://data.census.gov/table?t=Race+and+Ethnicity&g=0400000US25$1500000&tid=DECENNIALPL2020.P1
+minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
+
 
 
 
@@ -89,6 +95,7 @@ blk_group_ply <- cbfalse %>%
 TAZ_land <- tigris::erase_water(TAZ_ply, area_threshold = 0.5, year = 2020)
 
 blk_groups_land <- tigris::erase_water(blk_group_ply, area_threshold = 0.5, year = 2020)
+
 mapview(blk_groups_land) + mapview(TAZ_land, col.regions = "red")
 
 
@@ -220,11 +227,11 @@ pop_percent <- num_rooftops %>%
   mutate(population_intersection = population_pct * as.numeric(population_BG)) %>% 
   group_by(ID) %>% 
   # per TAZ: add up the population in each intersecting BG
-  mutate(population_TAZ = sum(population_intersection)) %>% 
+  mutate(population_TAZ_roof = sum(population_intersection)) %>% 
   ungroup()
 
 TAZ_pop_rooftops <- pop_percent %>% 
-  distinct(ID, population_TAZ)
+  distinct(ID, population_TAZ_roof)
 
 TAZ_plot <- TAZ_land %>% 
   left_join(TAZ_pop_rooftops)
@@ -233,10 +240,49 @@ mapview(TAZ_plot, zcol = "population_TAZ")
 
 ## Look at Area Share
 
+#### Land Area only
+
 ```{r}
 # First step is to separate out water area in each of the intersections to determine what percentage of block group area should be applied to the population for that block group
 
+TAZ_land$TAZ_land_area <- st_area(TAZ_land)
+blk_groups_land$BG_area <- st_area(blk_groups_land) # could also just take ALAND
+
 # Then, for each TAZ, the population of the intersected block groups should be added up.
+
+intersections_AS <- st_intersection(TAZ_land, blk_groups_land) %>% 
+  st_collection_extract("POLYGON") %>% 
+  rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
+intersections_AS$intersect_area <- st_area(intersections_AS)
+
+land_areas <- intersections_AS %>% 
+  select(c(Intersection_ID, ID, TAZ_land_area, GEOID, BG_area, intersect_area)) %>%
+  group_by(GEOID) %>% 
+  # per BG: get percentage of land area that is in each intersecting TAZ
+  mutate(BG_land_pct = intersect_area / BG_area) %>% 
+  ungroup() %>% 
+  left_join(census_pop) %>% 
+  # per BG: get population in each intersecting TAZ
+  mutate(population_intersection = BG_land_pct * as.numeric(population_BG)) %>% 
+  group_by(ID) %>% 
+  # per TAZ: add up the population in each intersecting BG
+  mutate(population_TAZ_LA = drop_units(sum(population_intersection))) %>% 
+  ungroup()
+
+TAZ_pop_LandArea <- land_areas %>% 
+  distinct(ID, population_TAZ_LA)
+
+
+
+# Pct Difference between the two
+diff <- TAZ_pop_rooftops %>% 
+  left_join(TAZ_pop_LandArea) %>% 
+  mutate(pct_diff = population_TAZ_roof / population_TAZ_LA )
+hist(diff$pct_diff, 40)
+
+```
+
+```{r}
 
 ```
 
@@ -245,9 +291,6 @@ mapview(TAZ_plot, zcol = "population_TAZ")
 ### Test minority share
 
 ```{r}
-
-# downloaded from: https://data.census.gov/table?t=Race+and+Ethnicity&g=0400000US25$1500000&tid=DECENNIALPL2020.P1
-minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
 
 ```
 
