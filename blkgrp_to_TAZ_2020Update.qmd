@@ -282,7 +282,43 @@ hist(diff$pct_diff, 40)
 
 ```
 
+#### Total Area
+
 ```{r}
+
+blk_group_ply$BG_area <- st_area(blk_group_ply) # could also just take ALAND
+
+# Then, for each TAZ, the population of the intersected block groups should be added up.
+
+intersections_tot <- st_intersection(TAZ_ply, blk_group_ply) %>% 
+  st_collection_extract("POLYGON") %>% 
+  rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
+intersections_tot$intersect_area <- st_area(intersections_tot)
+
+tot_areas <- intersections_tot %>% 
+  select(c(Intersection_ID, ID, TAZ_area, GEOID, BG_area, intersect_area)) %>%
+  group_by(GEOID) %>% 
+  # per BG: get percentage of land area that is in each intersecting TAZ
+  mutate(BG_tot_pct = intersect_area / BG_area) %>% 
+  ungroup() %>% 
+  left_join(census_pop) %>% 
+  # per BG: get population in each intersecting TAZ
+  mutate(population_intersection = BG_tot_pct * as.numeric(population_BG)) %>% 
+  group_by(ID) %>% 
+  # per TAZ: add up the population in each intersecting BG
+  mutate(population_TAZ_totA = drop_units(sum(population_intersection))) %>% 
+  ungroup()
+
+TAZ_pop_TotArea <- tot_areas %>% 
+  distinct(ID, population_TAZ_totA)
+
+
+
+# Pct Difference between the two
+diff <- TAZ_pop_TotArea %>% 
+  left_join(TAZ_pop_LandArea) %>% 
+  mutate(pct_diff = population_TAZ_totA / population_TAZ_LA )
+hist(diff$pct_diff, 40)
 
 ```
 
