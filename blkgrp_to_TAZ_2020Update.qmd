@@ -189,7 +189,6 @@ roofs_in_intersect <- st_join(rooftops, intersections,
   # group_by(STRUCT_ID) %>% 
   # top_n(1)  
 
-# This below is taking too long to run
 num_rooftops <- roofs_in_intersect %>% 
   st_drop_geometry() %>% 
   group_by(Intersection_ID) %>% 
