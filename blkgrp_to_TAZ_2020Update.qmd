@@ -224,11 +224,17 @@ mapview(intersections_2) + mapview(TAZ)
 
 #### Determine the Number of Rooftops in Each Intersection Area
 
+We pull the pre-stored rooftops file in and show an example. Feel free to see how the file matches the footprints in the OSM layer and the aerial satellite layer. 
+
 ```{r}
-# Created previously.
+# rooftops.rds reated previously.
 rooftops <- read_rds("./data/processed/rooftops.rds")
 mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
+```
 
+We now intersect the rooftops with the 
+
+```{r}
 #intersecting the rooftops with the census block groups
 #roofs_in_bg <- st_intersection(blk_groups_land, rooftops)
 
@@ -241,10 +247,10 @@ mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 # saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
 
 rooftops <- rooftops %>% 
-  select(c(STRUCT_ID))
+  select(STRUCT_ID)
 
 intersections <- intersections %>% 
-  select(c(Intersection_ID, ID, GEOID, intersect_area))
+  select(Intersection_ID, ID, GEOID, intersect_area)
 
 # Joining the intersection areas with the rooftops that reside inside of them
 # This took a very long time
