@@ -15,14 +15,41 @@ We want a way to allocate census information into TAZs. TAZs are made up of cens
 ### Set up Packages
 
 ```{r}
+#| message: false
 library(tidyverse)
 library(tidycensus)
 library(tigris)
 library(mapview)
 library(sf)
 library(units)
-
 ```
+
+## General Goal
+
+The TDM outputs results at a TAZ level. However, for equity analyses, we need to allocated census demographics to those TAZs--the model does not output results based on minority status, income status, or any other status that might be interesting for an equity analysis.
+
+Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate pieces of census demographics to surrounding TAZs to create demographics of the TAZs. We need to create a table that we can use to allocate portions of census geometry into TAZs.
+
+**Problems:**
+
+-   TAZs are mostly made up of blocks, but they're not exactly made up of blocks.
+-   There are small tweaks to the TAZ geometry throughout the model region that mean lines do not overlap exactly.
+-   Census blocks are NOT necessarily the best starting point because the differential privacy features of the 2020 census have rendered them unreliable.
+-   TAZs may be smaller than a census geometry.
+
+**Constraints:**
+
+-   TAZ geometry may change over time. The process should be repeatable for arbitrary TAZ geometry (this essentially means for ANY geometry).
+
+-   We want the process to be maintainable over multiple ACS iterations.
+
+**Other Goals**
+
+-   Create multiple methods to compare the sensitivity to methodology.
+
+**Potential Solutions**
+
+When joining 2010 census blocks to TAZs, Paul Reim performed a series of intersections to identify where blocks were split. Where a TAZ split a block, he counted rooftops and used StreetView to estimate how many rooftops were in each TAZ. It is not desirable to maintain such a process--the reproducibility is limited and its highly manual. We can replicate the methodology using the rooftops layer
 
 ## Load shapes
 
@@ -32,16 +59,10 @@ library(units)
 #Load TAZ shapes
 TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg") %>% 
   st_transform(26986) %>% 
-  filter(STATE == "MA") #%>% # Filtering to only in MA
+  filter(STATE == "MA") # Filtering to only in MA
+
 TAZ$TAZ_area <- st_area(TAZ)
   #filter(ID == 4398) # Filtering for one example
-# intersect them
-# bring in building footprints
-# find number of structures in each intersection
-# also want to do share of land area--remove water?
-# summarize
-# output
-
 
 # Load census block groups (other geography) tigris::block_groups()
 cbtrue <- tigris::block_groups(state = "MA", cb = TRUE, year = 2020)%>% 
