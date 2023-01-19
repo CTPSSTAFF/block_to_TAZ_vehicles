@@ -11,7 +11,9 @@ editor: visual
 **TODO**:
 
 -   Rename `cbfalse` to be more descriptive of what it is.
--   Remove "Different Method for Intersections.
+-   Remove "Different Method for Intersections" since we didn't use it.
+-   Remove duplicate rooftops: \`rooftops \|\> st_drop_geometry() \|\> group_by(STRUCT_ID) \|\> tally() \|\> filter(n\>1) \|\> View()\` Example: STRUCT_ID == "250858_862528". There are also STRUCT_IDs with values of "NA" that we should explore. Are they duplicate? Are they just unlabeled?
+-   Remove vestigial commented out code.
 
 ## General Goal
 
@@ -224,7 +226,7 @@ mapview(intersections_2) + mapview(TAZ)
 
 #### Determine the Number of Rooftops in Each Intersection Area
 
-We pull the pre-stored rooftops file in and show an example. Feel free to see how the file matches the footprints in the OSM layer and the aerial satellite layer. 
+We pull the pre-stored rooftops file in and show an example. Feel free to see how the file matches the footprints in the OSM layer and the aerial satellite layer.
 
 ```{r}
 # rooftops.rds reated previously.
@@ -232,7 +234,7 @@ rooftops <- read_rds("./data/processed/rooftops.rds")
 mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 ```
 
-We now intersect the rooftops with the 
+We now find which rooftops are in which intersection area.
 
 ```{r}
 #intersecting the rooftops with the census block groups
@@ -252,12 +254,28 @@ rooftops <- rooftops %>%
 intersections <- intersections %>% 
   select(Intersection_ID, ID, GEOID, intersect_area)
 
-# Joining the intersection areas with the rooftops that reside inside of them
-# This took a very long time
-roofs_in_intersect <- st_join(rooftops, intersections,
-                              left= FALSE, largest = TRUE)
+# Joining the intersection areas with the rooftops that reside inside of them.
+# 
+# See this thread for the basic idea. The default join for 
+# st_join is st_intersects, this is basically intersect the two and choose pull the info of the largest intersection area into the rooftop dataset.
+# https://github.com/r-spatial/sf/issues/578
 
-# NOTE: STRUCT_ID 250858_862528 still appears in two intersections areas, it is the only one.  
+# This took a very long time
+roofs_in_intersect <- st_join(
+  rooftops,  
+  intersections,
+  left= FALSE, 
+  largest = TRUE)
+
+# Here's an example of what this is doing.
+roofs_in_intersect_filt <- roofs_in_intersect |> 
+  filter(ID %in% c(2708, 2709)) |> 
+  mutate(Intersection_ID = as.character(Intersection_ID))
+
+mapview(roofs_in_intersect_filt, zcol = "Intersection_ID") +
+  mapview(intersections |> 
+            filter(ID %in% roofs_in_intersect_filt$ID), 
+          alpha.region = 0.01, layer.name = "Intersection")
 
 # keeping the intersection area with the largest part of the rooftop
 # roofs_in_intersect_clean <- roofs_in_intersect %>%
@@ -277,11 +295,25 @@ saveRDS(num_rooftops, "data/processed/num_rooftops_intersect.rds")
 #### Determine the percentage of population that belongs to each intersection in the TAZ based on the number of rooftops
 
 ```{r}
+# Pull in the rooftops that were calculated in the last step.
+roofs_in_intersect <- read_rds("./data/processed/rooftops_in_intersect.rds")
 
+num_rooftops <-  read_rds("data/processed/num_rooftops_intersect.rds")
+
+# Calculate the share of the GEOID in each 
+num_rooftops <- num_rooftops |> 
+  group_by(GEOID, ID) |> 
+  summarize(num_roof = sum(num_roof)) |> 
+  group_by(GEOID) |> 
+  mutate(allocation_pct = num_roof/sum(num_roof))
+```
+
+```{r}
 # Get population for block groups
 census_pop <- minority %>% 
   select(c(GEO_ID, P1_001N)) %>% 
   rename(GEOID = GEO_ID, population_BG = P1_001N)
+
 census_pop$GEOID <-str_remove_all(census_pop$GEOID, "1500000US")
 
 
