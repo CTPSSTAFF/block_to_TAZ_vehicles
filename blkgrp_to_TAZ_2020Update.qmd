@@ -8,22 +8,6 @@ format:
 editor: visual
 ---
 
-## Goal
-
-We want a way to allocate census information into TAZs. TAZs are made up of census blocks, but sometimes split the blocks. We want to create a table that gives us a way to allocate census factors into TAZs.
-
-### Set up Packages
-
-```{r}
-#| message: false
-library(tidyverse)
-library(tidycensus)
-library(tigris)
-library(mapview)
-library(sf)
-library(units)
-```
-
 ## General Goal
 
 The TDM outputs results at a TAZ level. However, for equity analyses, we need to allocated census demographics to those TAZs--the model does not output results based on minority status, income status, or any other status that might be interesting for an equity analysis.
@@ -49,7 +33,19 @@ Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate
 
 **Potential Solutions**
 
-When joining 2010 census blocks to TAZs, Paul Reim performed a series of intersections to identify where blocks were split. Where a TAZ split a block, he counted rooftops and used StreetView to estimate how many rooftops were in each TAZ. It is not desirable to maintain such a process--the reproducibility is limited and its highly manual. We can replicate the methodology using the rooftops layer
+When joining 2010 census blocks to TAZs, Paul Reim performed a series of intersections to identify where blocks were split. Where a TAZ split a block, he counted rooftops and used StreetView to estimate how many rooftops were in each TAZ. It is not desirable to maintain such a process--the reproducibility is limited and its highly manual. We can replicate the methodology using the rooftops layer.
+
+### Set up Packages
+
+```{r}
+#| message: false
+library(tidyverse)
+library(tidycensus)
+library(tigris)
+library(mapview)
+library(sf)
+library(units)
+```
 
 ## Load shapes
 
