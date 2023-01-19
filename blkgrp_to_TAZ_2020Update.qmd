@@ -226,8 +226,8 @@ mapview(intersections_2) + mapview(TAZ)
 
 ```{r}
 # Created previously.
-rooftops <- read_rds("data/processed/rooftops.rds")
-plot(st_geometry(head(rooftops,1)))
+rooftops <- read_rds("./data/processed/rooftops.rds")
+mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 
 #intersecting the rooftops with the census block groups
 #roofs_in_bg <- st_intersection(blk_groups_land, rooftops)
