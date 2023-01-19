@@ -14,6 +14,9 @@ editor: visual
 -   Remove "Different Method for Intersections" since we didn't use it.
 -   Remove duplicate rooftops: \`rooftops \|\> st_drop_geometry() \|\> group_by(STRUCT_ID) \|\> tally() \|\> filter(n\>1) \|\> View()\` Example: STRUCT_ID == "250858_862528". There are also STRUCT_IDs with values of "NA" that we should explore. Are they duplicate? Are they just unlabeled?
 -   Remove vestigial commented out code.
+-   Export only the allocation table: GEOID, TAZ, share_of_geoid_to_TAZ_method1 (then repeat for methods 2 and 3). Once you're happy you can join them together to compare. In the end, we'll keep one method. We also want to be able to attach the dasymetric method later too.
+
+Notes: You don't have to wrap select() arguments in c(). Using tidycensus gives you a cleaner table to start with rather than grabbing a flat file from the census and storing in in a folder. The end result should be the same.
 
 ## General Goal
 
@@ -106,7 +109,7 @@ cbfalse <- tigris::block_groups(state = "MA",
 
 # Load Population Census Data
 # downloaded from: https://data.census.gov/table?t=Race+and+Ethnicity&g=0400000US25$1500000&tid=DECENNIALPL2020.P1
-# minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
+minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
 
 # P2_005N: Non-Hispanic/Latino, White-alone.
 # P1_001N: Total Population.
@@ -300,12 +303,14 @@ roofs_in_intersect <- read_rds("./data/processed/rooftops_in_intersect.rds")
 
 num_rooftops <-  read_rds("data/processed/num_rooftops_intersect.rds")
 
-# Calculate the share of the GEOID in each 
+# Calculate the share of the GEOID in each TAZ.
 num_rooftops <- num_rooftops |> 
   group_by(GEOID, ID) |> 
   summarize(num_roof = sum(num_roof)) |> 
   group_by(GEOID) |> 
-  mutate(allocation_pct = num_roof/sum(num_roof))
+  mutate(rooftop_pct = num_roof/sum(num_roof))
+
+write_csv(num_rooftops, "./output/data/rooftop_share_plymouth.csv")
 ```
 
 ```{r}
@@ -315,7 +320,6 @@ census_pop <- minority %>%
   rename(GEOID = GEO_ID, population_BG = P1_001N)
 
 census_pop$GEOID <-str_remove_all(census_pop$GEOID, "1500000US")
-
 
 pop_percent <- num_rooftops %>% 
   group_by(GEOID) %>%
@@ -335,7 +339,8 @@ TAZ_pop_rooftops <- pop_percent %>%
 
 TAZ_plot <- TAZ_land %>% 
   left_join(TAZ_pop_rooftops)
-mapview(TAZ_plot, zcol = "population_TAZ")
+
+mapview(TAZ_plot, zcol = "population_TAZ_roof")
 ```
 
 ## Look at Area Share
@@ -353,10 +358,25 @@ blk_groups_land$BG_area <- st_area(blk_groups_land) # could also just take ALAND
 intersections_AS <- st_intersection(TAZ_land, blk_groups_land) %>% 
   st_collection_extract("POLYGON") %>% 
   rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
+
 intersections_AS$intersect_area <- st_area(intersections_AS)
 
+# Create the land area allocation table for export.
+land_area_alloc <- intersections_AS %>% 
+  st_drop_geometry() |> 
+  select(Intersection_ID, ID, TAZ_land_area, GEOID, BG_area, intersect_area) %>%
+  group_by(ID, GEOID, BG_area) %>%
+  summarize(intersect_area = sum(intersect_area)) |> 
+  group_by(GEOID) |> 
+  # per BG: get percentage of land area that is in each intersecting TAZ
+  mutate(land_area_pct = intersect_area / BG_area,
+         land_area_pct = drop_units(land_area_pct))
+
+write_csv(land_area_alloc, "./output/data/landarea_share_plymouth.csv")
+
 land_areas <- intersections_AS %>% 
-  select(c(Intersection_ID, ID, TAZ_land_area, GEOID, BG_area, intersect_area)) %>%
+  select(Intersection_ID, ID, TAZ_land_area, 
+         GEOID, BG_area, intersect_area) %>%
   group_by(GEOID) %>% 
   # per BG: get percentage of land area that is in each intersecting TAZ
   mutate(BG_land_pct = intersect_area / BG_area) %>% 
@@ -378,6 +398,7 @@ TAZ_pop_LandArea <- land_areas %>%
 diff <- TAZ_pop_rooftops %>% 
   left_join(TAZ_pop_LandArea) %>% 
   mutate(pct_diff = population_TAZ_roof / population_TAZ_LA )
+
 hist(diff$pct_diff, 40)
 
 ```
@@ -385,7 +406,6 @@ hist(diff$pct_diff, 40)
 #### Total Area
 
 ```{r}
-
 blk_group_ply$BG_area <- st_area(blk_group_ply) # could also just take ALAND
 
 # Then, for each TAZ, the population of the intersected block groups should be added up.
@@ -393,12 +413,27 @@ blk_group_ply$BG_area <- st_area(blk_group_ply) # could also just take ALAND
 intersections_tot <- st_intersection(TAZ_ply, blk_group_ply) %>% 
   st_collection_extract("POLYGON") %>% 
   rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
+
 intersections_tot$intersect_area <- st_area(intersections_tot)
 
+# Create the full area (land + water) allocation table for export.
+tot_area_alloc <- intersections_tot %>%
+  st_drop_geometry() |> 
+  select(Intersection_ID, ID, TAZ_area, 
+         GEOID, BG_area, intersect_area) %>%
+  group_by(ID, GEOID, BG_area) %>%
+  summarize(intersect_area = sum(intersect_area)) |> 
+  group_by(GEOID) |> 
+  # per BG: get percentage of all area that is in each intersecting TAZ
+  mutate(all_area_pct = intersect_area / BG_area,
+         all_area_pct = drop_units(all_area_pct))
+
+write_csv(tot_area_alloc, "./output/data/allarea_share_plymouth.csv")
+
 tot_areas <- intersections_tot %>% 
-  select(c(Intersection_ID, ID, TAZ_area, GEOID, BG_area, intersect_area)) %>%
+  select(Intersection_ID, ID, TAZ_area, GEOID, BG_area, intersect_area) %>%
   group_by(GEOID) %>% 
-  # per BG: get percentage of land area that is in each intersecting TAZ
+  # per BG: get percentage of all area that is in each intersecting TAZ
   mutate(BG_tot_pct = intersect_area / BG_area) %>% 
   ungroup() %>% 
   left_join(census_pop) %>% 
@@ -412,17 +447,29 @@ tot_areas <- intersections_tot %>%
 TAZ_pop_TotArea <- tot_areas %>% 
   distinct(ID, population_TAZ_totA)
 
-
-
 # Pct Difference between the two
 diff <- TAZ_pop_TotArea %>% 
   left_join(TAZ_pop_LandArea) %>% 
   mutate(pct_diff = population_TAZ_totA / population_TAZ_LA )
+
 hist(diff$pct_diff, 40)
 
 ```
 
-## Testing
+## Join the Roofs, Land Area, All Area Methods
+
+```{r}
+# Join them all down here for exploration.
+# Import the census block group pops once, then mutiply the populations here. 
+```
+
+### Testing
+
+### Compare Population Estimates
+
+```{r}
+
+```
 
 ### Test minority share
 
