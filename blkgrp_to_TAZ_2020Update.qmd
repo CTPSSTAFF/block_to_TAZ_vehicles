@@ -200,6 +200,27 @@ rooftops <- read_rds("./data/processed/rooftops.rds")
 mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 ```
 
+Looking at repeated and NA IDs for rooftops
+
+```{r}
+repeats <- rooftops |> st_drop_geometry() |> group_by(STRUCT_ID) |> tally() |> filter(n>1)
+View(repeats)
+
+repeats_geom <- rooftops %>% 
+  filter(STRUCT_ID %in% repeats$STRUCT_ID) 
+mapview(repeats_geom, zcol = "STRUCT_ID")
+
+# Some of the repeats are where there are buildings for schools, like UMass Boston
+# Others are where there are multiple polygons that have the same struct ID and just look like a main building with an extra attachment.  
+
+
+NA_rooftops <- rooftops %>% 
+  filter(is.na(STRUCT_ID) == TRUE)
+x <- head(NA_rooftops,1)
+mapview(x)
+# NA struct IDs seem to be random
+```
+
 We now find which rooftops are in which intersection area.
 
 ```{r}
@@ -233,9 +254,6 @@ roofs_in_intersect <- st_join(
   left= FALSE, 
   largest = TRUE)
 
-# Skipping the join (if it is already done and saved in the output folder)
-roofs_in_intersect <- readRDS("data/processed/rooftops_in_intersect.rds")
-
 # Here's an example of what this is doing.
 roofs_in_intersect_filt <- roofs_in_intersect |> 
   filter(ID %in% c(2708, 2709)) |> 
@@ -268,7 +286,7 @@ num_rooftops <-  read_rds("data/processed/num_rooftops_intersect.rds")
 num_rooftops <- num_rooftops |> 
   group_by(GEOID, ID) |> 
   summarize(num_roof = sum(num_roof)) |> 
-  group_by(GEOID) |> 
+  group_by(GEOID) |>  ## NOTE: Shouldn't we be grouping by ID if we want to find the pct of GEOID in each TAZ? Right now if is showing the share of each TAZ the the GEOID
   mutate(rooftop_pct = num_roof/sum(num_roof))
 
 write_csv(num_rooftops, "./output/data/rooftop_share_plymouth.csv")
@@ -425,6 +443,11 @@ hist(diff$pct_diff, 40)
 
 ```{r}
 # Join them all down here for exploration.
+
+joined_estimates <- TAZ_pop_rooftops %>% 
+  left_join(TAZ_pop_LandArea) %>% 
+  left_join((TAZ_pop_TotArea))
+
 # Import the census block group pops once, then mutiply the populations here. 
 ```
 
@@ -433,7 +456,6 @@ hist(diff$pct_diff, 40)
 ### Compare Population Estimates
 
 ```{r}
-
 ```
 
 ### Test minority share
