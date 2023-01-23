@@ -10,8 +10,6 @@ editor: visual
 
 **TODO**:
 
--   Rename `cbfalse` to be more descriptive of what it is.
--   Remove "Different Method for Intersections" since we didn't use it.
 -   Remove duplicate rooftops: \`rooftops \|\> st_drop_geometry() \|\> group_by(STRUCT_ID) \|\> tally() \|\> filter(n\>1) \|\> View()\` Example: STRUCT_ID == "250858_862528". There are also STRUCT_IDs with values of "NA" that we should explore. Are they duplicate? Are they just unlabeled?
 -   Remove vestigial commented out code. It's going to be confusing.
 -   Export only the allocation table: GEOID, TAZ, share_of_geoid_to_TAZ_method1 (then repeat for methods 2 and 3). Once you're happy you can join them together to compare. In the end, we'll keep one method. We also want to be able to attach the dasymetric method later too.
@@ -53,7 +51,7 @@ Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate
 When joining 2010 census blocks to TAZs, Paul Reim performed a series of intersections to identify where blocks were split. Where a TAZ split a block, he counted rooftops and used StreetView to estimate how many rooftops were in each TAZ. It is not desirable to maintain such a process--the reproducibility is limited and its highly manual. We can replicate the methodology using the rooftops layer. There are other solutions available as well:
 
 1.  Rooftops
-    i.  Allocate based on where the largest piece is
+    i.  Allocate based on where the largest piece of the rooftop is
     ii. Where the centroid of the roof is
     iii. Allocate proportionally based on the rooftop area.
 2.  Land Area
@@ -91,18 +89,11 @@ TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/g
 TAZ$TAZ_area <- st_area(TAZ)
   #filter(ID == 4398) # Filtering for one example
 
-# Load census block groups (other geography) 
-# cbtrue <- tigris::block_groups(state = "MA", 
-#                                cb = TRUE, 
-#                                year = 2020)%>%
-#   st_transform(26986)
 
-cbfalse <- tigris::block_groups(state = "MA", 
+block_groups <- tigris::block_groups(state = "MA", 
                                 cb = FALSE, 
                                 year = 2020) %>% 
   st_transform(26986)
-
-#mapview(cbfalse) + mapview(TAZ, col.regions = "red") #+ mapview(cbtrue, col.regions = "yellow")
 
 # The CB false (the more detailed) geometry looked like it matched up better, so we move forward with that path.
 
@@ -140,7 +131,7 @@ TAZ_ply <- TAZ %>%
 
 # 023 = Plymouth
 # See: tidycensus::fips_codes |> filter(state == "MA", county_code == "023")
-blk_group_ply <- cbfalse %>% 
+blk_group_ply <- block_groups %>% 
   filter(COUNTYFP == "023")
 ```
 
@@ -175,26 +166,6 @@ intersections$intersect_area <- st_area(intersections)
 
 # mapview(TAZ_land, col.regions = "red") + mapview(blk_groups_land) + mapview(intersections, zcol = "Intersection_ID", legend = FALSE)
 
-# Trying it out with a subset
-# ss_intersection <- intersections %>% 
-#   filter(ID == 4398) %>% 
-#   st_as_sf() 
-# ss_intersection$area <- st_area(ss_intersection)
-# ss_intersection$pct_intersect <- ss_intersection$area / max(ss_intersection$area)
-# 
-# ss_intersection_final <- ss_intersection %>% 
-#   filter(as.vector(pct_intersect) > 0.01)
-# 
-# plot(st_geometry(ss_intersection_final))
-
-
-# Only keeping intersection areas for a TAZ that is at least 1% of the TAZ area 
-# (could also make it 1% of the largest intersection area)
-# intersections_clean <- intersections %>% 
-#   group_by(ID) %>% 
-#   mutate(pct_intersect = intersect_area / TAZ_area ) %>% 
-#   filter(as.vector(pct_intersect) > 0.01) %>% 
-#   ungroup() 
 
 ```
 
@@ -215,21 +186,6 @@ mapview(TAZ_land |>
           layer.name = "CBG") + 
   mapview(example, zcol = "Intersection_ID",
           layer.name = "Intersection")
-```
-
-### Different Method for Doing Intersections
-
-This section was not used.
-
-```{r}
-#| eval: false
-intersections_2 <- st_join(TAZ, cbfalse, 
-                           join = st_intersects, 
-                           largest = TRUE)
-mapview(intersections_2) + mapview(TAZ)
-
-# This method is not correct because it only pairs one TAZ with one block group, and also does not result in the geometry of the intersection, only the TAZ
-
 ```
 
 ## Look at Rooftop Share
@@ -277,6 +233,9 @@ roofs_in_intersect <- st_join(
   left= FALSE, 
   largest = TRUE)
 
+# Skipping the join (if it is already done and saved in the output folder)
+roofs_in_intersect <- readRDS("data/processed/rooftops_in_intersect.rds")
+
 # Here's an example of what this is doing.
 roofs_in_intersect_filt <- roofs_in_intersect |> 
   filter(ID %in% c(2708, 2709)) |> 
@@ -286,11 +245,6 @@ mapview(roofs_in_intersect_filt, zcol = "Intersection_ID") +
   mapview(intersections |> 
             filter(ID %in% roofs_in_intersect_filt$ID), 
           alpha.region = 0.01, layer.name = "Intersection")
-
-# keeping the intersection area with the largest part of the rooftop
-# roofs_in_intersect_clean <- roofs_in_intersect %>%
-  # group_by(STRUCT_ID) %>% 
-  # top_n(1)  
 
 num_rooftops <- roofs_in_intersect %>% 
   st_drop_geometry() %>% 
