@@ -213,6 +213,8 @@ mapview(repeats_geom, zcol = "STRUCT_ID")
 # Some of the repeats are where there are buildings for schools, like UMass Boston
 # Others are where there are multiple polygons that have the same struct ID and just look like a main building with an extra attachment.  
 
+# Option 1: summarize repeats and add pack into no duplicates
+# Option 2: Go through manually and take the largest
 
 NA_rooftops <- rooftops %>% 
   filter(is.na(STRUCT_ID) == TRUE)
@@ -247,11 +249,14 @@ intersections <- intersections %>%
 # st_join is st_intersects, this is basically intersect the two and choose pull the info of the largest intersection area into the rooftop dataset.
 # https://github.com/r-spatial/sf/issues/578
 
+
+# NOTE: have to rethink the join to account for total bg area as opposed to the largest intersection area (see Jamboard)
+# https://jamboard.google.com/d/1L5YrUrmOUpmQp8X6w2gaz51Fz6We8b0uV-Hm5g4aU2E/viewer?ts=63d15e99&f=1
 # This took a very long time
 roofs_in_intersect <- st_join(
   rooftops,  
   intersections,
-  left= FALSE, 
+  left= FALSE, # inner join
   largest = TRUE)
 
 # Here's an example of what this is doing.
@@ -283,13 +288,13 @@ roofs_in_intersect <- read_rds("./data/processed/rooftops_in_intersect.rds")
 num_rooftops <-  read_rds("data/processed/num_rooftops_intersect.rds")
 
 # Calculate the share of the GEOID in each TAZ.
-num_rooftops <- num_rooftops |> 
-  group_by(GEOID, ID) |> 
+rooftop_share <- num_rooftops |> 
+  group_by(Intersection_ID, GEOID, ID) |> 
   summarize(num_roof = sum(num_roof)) |> 
   group_by(GEOID) |>  ## NOTE: Shouldn't we be grouping by ID if we want to find the pct of GEOID in each TAZ? Right now if is showing the share of each TAZ the the GEOID
   mutate(rooftop_pct = num_roof/sum(num_roof))
 
-write_csv(num_rooftops, "./output/data/rooftop_share_plymouth.csv")
+write_csv(rooftop_share, "./output/data/rooftop_share_plymouth.csv")
 ```
 
 ```{r}
