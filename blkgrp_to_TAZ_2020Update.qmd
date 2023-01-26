@@ -15,6 +15,7 @@ editor: visual
 -   Export only the allocation table: GEOID, TAZ, share_of_geoid_to_TAZ_method1 (then repeat for methods 2 and 3). Once you're happy you can join them together to compare. In the end, we'll keep one method. We also want to be able to attach the dasymetric method later too.
 -   Check the all area calc to see if the coast line is included. We really dont need that no matter what. It may just be a not great method and we dont worry much about it.
 -   Check the number of CBG to TAZ relationships that exist. They ought to be the same(?) if we include 0% shares, which might not appear in a table.
+-   Look at building footprints dataset for whole country by Microsoft- Emily
 
 Notes:
 
@@ -203,23 +204,41 @@ mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 Looking at repeated and NA IDs for rooftops
 
 ```{r}
+
+# Find the IDs of repeats and how many times they are repeated
 repeats <- rooftops |> st_drop_geometry() |> group_by(STRUCT_ID) |> tally() |> filter(n>1)
 View(repeats)
 
-repeats_geom <- rooftops %>% 
-  filter(STRUCT_ID %in% repeats$STRUCT_ID) 
-mapview(repeats_geom, zcol = "STRUCT_ID")
+# Find the rooftops with unique STRUCT_IDs
+unique_roof <- rooftops %>% filter(!(STRUCT_ID %in% repeats$STRUCT_ID)) %>% 
+  select(STRUCT_ID, geometry)
+# Find the rooftops with repeated or NA STRUCT_IDs
+repeat_roof <- rooftops %>% filter(STRUCT_ID %in% repeats$STRUCT_ID) %>% 
+  select(STRUCT_ID, geometry)
+
+# All NAs will be replaced by a new id
+repeat_roof$STRUCT_ID[is.na(repeat_roof$STRUCT_ID)] <- as.numeric(rownames(repeat_roof))
+
+# Summarizing to get new geometry
+repeat_roof <- repeat_roof %>% 
+  group_by(STRUCT_ID) %>% 
+  summarize() 
+
+mapview(repeat_roof)
+
+# combining the rooftops with unique ids with new summarized roof geometries
+final_roofs <- bind_rows(unique_roof, repeat_roof)
 
 # Some of the repeats are where there are buildings for schools, like UMass Boston
 # Others are where there are multiple polygons that have the same struct ID and just look like a main building with an extra attachment.  
 
-# Option 1: summarize repeats and add pack into no duplicates
+# Option 1: summarize repeats and add back into no duplicates
 # Option 2: Go through manually and take the largest
 
-NA_rooftops <- rooftops %>% 
-  filter(is.na(STRUCT_ID) == TRUE)
-x <- head(NA_rooftops,1)
-mapview(x)
+#NA_rooftops <- rooftops %>% 
+#  filter(is.na(STRUCT_ID) == TRUE)
+#x <- head(NA_rooftops,1)
+#mapview(x)
 # NA struct IDs seem to be random
 ```
 
@@ -237,8 +256,6 @@ We now find which rooftops are in which intersection area.
 # saveRDS(roofs_in_bg, "data/processed/rooftops_in_bg.rds")
 # saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
 
-rooftops <- rooftops %>% 
-  select(STRUCT_ID)
 
 intersections <- intersections %>% 
   select(Intersection_ID, ID, GEOID, intersect_area)
@@ -254,7 +271,7 @@ intersections <- intersections %>%
 # https://jamboard.google.com/d/1L5YrUrmOUpmQp8X6w2gaz51Fz6We8b0uV-Hm5g4aU2E/viewer?ts=63d15e99&f=1
 # This took a very long time
 roofs_in_intersect <- st_join(
-  rooftops,  
+  final_roofs,  
   intersections,
   left= FALSE, # inner join
   largest = TRUE)
