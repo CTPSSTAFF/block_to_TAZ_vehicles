@@ -296,6 +296,27 @@ saveRDS(roofs_in_intersect, "data/processed/rooftops_in_intersect.rds")
 saveRDS(num_rooftops, "data/processed/num_rooftops_intersect.rds")
 ```
 
+Looking to see how many rooftops are in multiple intersections
+
+```{r}
+roofs_in_intersect2 <- st_join(
+  final_roofs,  
+  intersections,
+  left= FALSE) %>% 
+  group_by(STRUCT_ID) %>% 
+  mutate(num_intersections = n()) 
+
+roofs_in_intersect2 <- roofs_in_intersect2 %>% 
+  distinct(STRUCT_ID, num_intersections) %>% 
+  filter(num_intersections > 1)
+
+# 4 intersections: 6 rooftops
+# 3 intersections: 132 rooftops
+# 2 intersections: 87 rooftops
+# Percent of rootops (240492) that are in 3+ intersections: 0.05%
+  
+```
+
 #### Determine the percentage of population that belongs to each intersection in the TAZ based on the number of rooftops
 
 ```{r}
