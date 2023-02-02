@@ -512,9 +512,3 @@ Thoughts:
 -   some TAZs are smaller than blockgroups. Do we need to adjust the method of analysis for those cases? It could be the same. Since we are looking for the percentage of the block group that is within the TAZ, then it wouldn't matter if it is smaller or larger. In this case, it just wouldn't also be sharing area with other block groups.
 
     ![](images/image-779890944.png)
-
--   There are 17,000 intersection areas, meaning that the boundaries probably don't add up. Brought it down to 8843 by taking out the smallest intersection areas
-
--   Anything with the rooftops takes a very long time
-
--   the number of census block groups goes from 5116 to 5110, meaning there are 6 block groups with no rooftops. Also does not take into account if there are rooftops that intersect multiple blockgroups. For some reason, there are less unique IDs in roofs_in_cb than there are in rooftops, but the sum in num_rooftops is the same as the number of entries in roofs_in_cb
