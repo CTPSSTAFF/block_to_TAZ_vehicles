@@ -1,6 +1,6 @@
 ---
 title: "Merging Blocks and TAZs"
-author: "Author Goes Here"
+author: "Sophie Fox and Steven Andrews"
 date: "`r Sys.Date()`"
 format: 
   html: 
@@ -69,6 +69,7 @@ When joining 2010 census blocks to TAZs, Paul Reim performed a series of interse
 
 ```{r}
 #| message: false
+#| warning: false
 library(tidyverse)
 library(tidycensus)
 library(tigris)
@@ -90,14 +91,26 @@ TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/g
 TAZ$TAZ_area <- st_area(TAZ)
   #filter(ID == 4398) # Filtering for one example
 
-
+# OBtain the 2020 block_groups from the tigris package.
+# The CB false (the more detailed) geometry looked like it matched up better, so we move forward with that path.
 block_groups <- tigris::block_groups(state = "MA", 
                                 cb = FALSE, 
                                 year = 2020) %>% 
   st_transform(26986)
 
-# The CB false (the more detailed) geometry looked like it matched up better, so we move forward with that path.
+# Clip the block_groups to match the geometry of the TAZ file. This will eliminate coastal waters but retain inland waters. This is a useful starting place to have a similar coast line. This will also make our `erase_water` function work on a more similar set of water.
 
+block_groups_nocoast <- 
+  st_intersection(block_groups, TAZ |> summarize()) |> 
+  st_collection_extract("POLYGON")
+
+# Review the differences. It looks like what we'd expect. Coastal waters are not in the dataset anymore. 
+# mapview(block_groups) + 
+# mapview(block_groups_nocoast , col.regions = "orange")
+
+# Overwrite the original file with the no_coast version and clean up the workspace.
+block_groups <- block_groups_nocoast
+rm(block_groups_nocoast)
 
 #massgis rooftops: https://www.mass.gov/info-details/massgis-data-building-structures-2-d
 # Download the file into "./data/base/" and then read it in here. Save it as a .rds for easy loading. Optionally, we could 
@@ -142,14 +155,19 @@ In this section we remove the water from the geography to focus only on "land ar
 
 ```{r}
 
-TAZ_land <- tigris::erase_water(TAZ_ply, area_threshold = 0.5, year = 2020)
+TAZ_land <- tigris::erase_water(TAZ_ply, 
+                                area_threshold = 0.5, 
+                                year = 2020)
 
-blk_groups_land <- tigris::erase_water(blk_group_ply, area_threshold = 0.5, year = 2020)
+blk_groups_land <- tigris::erase_water(blk_group_ply,
+                                       area_threshold = 0.5, 
+                                       year = 2020)
 
-mapview(blk_groups_land) + mapview(TAZ_land, col.regions = "red")
+
+mapview(blk_groups_land) + 
+  mapview(TAZ_land, col.regions = "red")
 
 # An alternative path to eliminating "all" water would be to use tigris::area_water() combined with gis operations to subtract it. To make the operations more performant, we could break things down at the county level. 
-#tigris::area_water()
 ```
 
 ## Perform Intersections
@@ -189,7 +207,7 @@ mapview(TAZ_land |>
           layer.name = "Intersection")
 ```
 
-## Look at Rooftop Share
+## Allocate based on rooftops
 
 #### Determine the Number of Rooftops in Each Intersection Area
 
@@ -365,7 +383,7 @@ TAZ_plot <- TAZ_land %>%
 mapview(TAZ_plot, zcol = "population_TAZ_roof")
 ```
 
-## Look at Area Share
+## Allocate based on area
 
 #### Land Area only
 
@@ -478,7 +496,17 @@ diff <- TAZ_pop_TotArea %>%
   left_join(TAZ_pop_LandArea) %>% 
   mutate(pct_diff = population_TAZ_totA / population_TAZ_LA )
 
-hist(diff$pct_diff, 40)
+ggplot(diff, aes(x = pct_diff)) +
+  geom_histogram(binwidth = 0.25) +
+  scale_x_continuous(breaks = seq(0,25,1))
+
+hist(diff$pct_diff, 80)
+
+```
+
+## Dasymetric Allocation
+
+```{r}
 
 ```
 
