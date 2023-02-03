@@ -224,17 +224,31 @@ Looking at repeated and NA IDs for rooftops
 ```{r}
 
 # Find the IDs of repeats and how many times they are repeated
-repeats <- rooftops |> st_drop_geometry() |> group_by(STRUCT_ID) |> tally() |> filter(n>1)
-View(repeats)
+repeats <- rooftops |> 
+  st_drop_geometry() |> 
+  group_by(STRUCT_ID) |> 
+  tally() |> 
+  filter(n>1)
+#View(repeats)
 
 # Find the rooftops with unique STRUCT_IDs
-unique_roof <- rooftops %>% filter(!(STRUCT_ID %in% repeats$STRUCT_ID)) %>% 
+unique_roof <- rooftops %>% 
+  filter(!(STRUCT_ID %in% repeats$STRUCT_ID)) %>% 
   select(STRUCT_ID, geometry)
+
 # Find the rooftops with repeated or NA STRUCT_IDs
-repeat_roof <- rooftops %>% filter(STRUCT_ID %in% repeats$STRUCT_ID) %>% 
+repeat_roof <- rooftops %>% 
+  filter(STRUCT_ID %in% repeats$STRUCT_ID) %>% 
   select(STRUCT_ID, geometry)
 
 # All NAs will be replaced by a new id
+repeat_roof <- repeat_roof |> 
+  mutate(STRUCT_ID = 
+           coalesce(STRUCT_ID, 
+                    paste0(row_number(),"_replaced_na")
+                    )
+         )
+
 repeat_roof$STRUCT_ID[is.na(repeat_roof$STRUCT_ID)] <- as.numeric(rownames(repeat_roof))
 
 # Summarizing to get new geometry
@@ -261,6 +275,68 @@ final_roofs <- bind_rows(unique_roof, repeat_roof)
 ```
 
 We now find which rooftops are in which intersection area.
+
+Calculate two types of joins.
+
+1\) Intersect with CBGs
+
+2\) intersect with TAZs.
+
+```{r}
+tictoc::tic()
+roof_cbg <- st_join(
+  final_roofs,
+  blk_groups_land |> select(GEOID),
+  left = FALSE,
+  largest = TRUE
+) |> st_drop_geometry()
+tictoc::toc()
+
+tictoc::tic()
+roof_taz <- st_join(
+  final_roofs |> 
+    filter(STRUCT_ID %in% roof_cbg$STRUCT_ID),
+  TAZ_land |> select(ID),
+  left = FALSE,
+  largest = TRUE
+)|> st_drop_geometry()
+tictoc::toc()
+
+# Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
+
+# saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
+# saveRDS(roof_taz, "./data/processed/roof_taz.rds")
+roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
+roof_taz <- saveRDS("./data/processed/roof_taz.rds")
+
+tictoc::tic()
+roof_shares <- rooftops |> 
+  filter(STRUCT_ID %in% roof_cbg$STRUCT_ID) |> 
+  left_join(roof_cbg, by = "STRUCT_ID") |> 
+  left_join(roof_taz, by = "STRUCT_ID")
+tictoc::toc()
+
+tictoc::tic()
+roof_shares_ratio <- roof_shares |> 
+  st_drop_geometry() |> 
+  group_by(GEOID,ID) |> 
+  summarize(tot_roofs = n()) |> 
+  group_by(GEOID) |> 
+  mutate(pct = tot_roofs/sum(tot_roofs))
+tictoc::toc()
+
+write_csv(roof_shares_ratio, file = "./output/data/rooftop_share_plymouth_largest_in_each.csv")
+
+mapview(roof_shares |> filter(ID %in% c(2708, 2709))) + 
+  mapview(blk_groups_land, col.regions = "pink")
+
+```
+
+```{r}
+# TODO: Check why some roofs are in cbg but not taz and viceversa 
+# TODO: Check
+```
+
 
 ```{r}
 #intersecting the rooftops with the census block groups
