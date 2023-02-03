@@ -196,6 +196,8 @@ library(ggplot2)
 ggplot(intersections_land, aes(x = LAND_BG_AREA, y = ALAND)) + geom_smooth(method = "lm") + geom_point() + coord_equal() +  geom_abline(slope = 1) 
 ```
 
+# OLD
+
 ## Taking out the Water Area
 
 In this section we remove the water from the geography to focus only on "land area".
@@ -254,7 +256,7 @@ mapview(TAZ_land |>
           layer.name = "Intersection")
 ```
 
-## Allocate based on rooftops
+# Allocate based on rooftops
 
 #### Determine the Number of Rooftops in Each Intersection Area
 
@@ -322,8 +324,8 @@ We now find which rooftops are in which intersection area.
 # saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
 
 
-intersections <- intersections %>% 
-  select(Intersection_ID, ID, GEOID, intersect_area)
+intersections_land <- intersections_land %>% 
+  select(Intersection_ID, ID, GEOID, TOTAL_BG_AREA, INTERSECTION_LAND_AREA, LAND_BG_AREA)
 
 # Joining the intersection areas with the rooftops that reside inside of them.
 # 
@@ -337,7 +339,7 @@ intersections <- intersections %>%
 # This took a very long time
 roofs_in_intersect <- st_join(
   final_roofs,  
-  intersections,
+  intersections_land,
   left= FALSE, # inner join
   largest = TRUE)
 
@@ -351,11 +353,11 @@ mapview(roofs_in_intersect_filt, zcol = "Intersection_ID") +
             filter(ID %in% roofs_in_intersect_filt$ID), 
           alpha.region = 0.01, layer.name = "Intersection")
 
-num_rooftops <- roofs_in_intersect %>% 
+num_rooftops2 <- roofs_in_intersect %>% 
   st_drop_geometry() %>% 
   group_by(Intersection_ID) %>% 
   mutate(num_roof = n()) %>% 
-  distinct(Intersection_ID, ID, GEOID, intersect_area, num_roof)
+  distinct(Intersection_ID, ID, GEOID, INTERSECTION_LAND_AREA, num_roof)
 
 saveRDS(roofs_in_intersect, "data/processed/rooftops_in_intersect.rds")
 saveRDS(num_rooftops, "data/processed/num_rooftops_intersect.rds")
