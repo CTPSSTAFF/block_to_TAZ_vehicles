@@ -191,6 +191,9 @@ intersections_land$INTERSECTION_LAND_AREA <- st_area(intersections_land)
 intersections_land <- intersections_land %>% 
   group_by(GEOID) %>% #grouping by block group
   mutate(LAND_BG_AREA = sum(INTERSECTION_LAND_AREA))
+
+library(ggplot2)
+ggplot(intersections_land, aes(x = LAND_BG_AREA, y = ALAND)) + geom_smooth(method = "lm") + geom_point() + coord_equal() +  geom_abline(slope = 1) 
 ```
 
 ## Taking out the Water Area
