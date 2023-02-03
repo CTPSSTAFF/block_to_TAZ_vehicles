@@ -149,6 +149,50 @@ blk_group_ply <- block_groups %>%
   filter(COUNTYFP == "023")
 ```
 
+## Reordering The Steps
+
+### Find Area of census block groups
+
+```{r}
+
+blk_group_ply$TOTAL_BG_AREA <- st_area(blk_group_ply)
+
+```
+
+### Intersect census block groups with TAZ
+
+```{r}
+
+intersections <- st_intersection(TAZ_ply, blk_group_ply) %>%
+  st_collection_extract("POLYGON") %>% 
+  rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
+```
+
+### Erase Water From Intersections
+
+```{r}
+
+intersections_land <- tigris::erase_water(intersections, 
+                                area_threshold = 0.5, 
+                                year = 2020)
+```
+
+### Recalculate Land Area for the Intersections
+
+```{r}
+
+intersections_land$INTERSECTION_LAND_AREA <- st_area(intersections_land)
+```
+
+### Find Total Land Area for Census Block Groups
+
+```{r}
+
+intersections_land <- intersections_land %>% 
+  group_by(GEOID) %>% #grouping by block group
+  mutate(LAND_BG_AREA = sum(INTERSECTION_LAND_AREA))
+```
+
 ## Taking out the Water Area
 
 In this section we remove the water from the geography to focus only on "land area".
