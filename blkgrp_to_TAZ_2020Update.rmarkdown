@@ -491,7 +491,7 @@ TAZ_plot_FINAL <- TAZ_plot %>%
   left_join(TAZ_pop_TotArea)
 
 
-mapview(TAZ_plot, zcol = "population_TAZ_AA")
+mapview(TAZ_plot_FINAL, zcol = "population_TAZ_AA")
 
 
 
