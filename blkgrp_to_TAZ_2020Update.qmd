@@ -342,9 +342,9 @@ roofs_in_intersect2 <- roofs_in_intersect2 %>%
   filter(num_intersections > 1)
 
 # 4 intersections: 6 rooftops
-# 3 intersections: 143 rooftops
-# 2 intersections: 104 rooftops
-# Percent of rootops (240492) that are in 3+ intersections: 0.06%
+# 3 intersections: 133 rooftops
+# 2 intersections: 90 rooftops
+# Percent of rootops (240492) that are in 3+ intersections: 0.058%
   
 ```
 
