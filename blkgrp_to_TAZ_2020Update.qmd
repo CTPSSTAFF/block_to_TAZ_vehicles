@@ -146,7 +146,9 @@ TAZ_ply <- TAZ %>%
 # 023 = Plymouth
 # See: tidycensus::fips_codes |> filter(state == "MA", county_code == "023")
 blk_group_ply <- block_groups %>% 
-  filter(COUNTYFP == "023")
+  filter(COUNTYFP == "023") %>% 
+  group_by(GEOID) %>% 
+  summarize()
 ```
 
 ## Reordering The Steps
@@ -155,7 +157,8 @@ blk_group_ply <- block_groups %>%
 
 ```{r}
 
-blk_group_ply$TOTAL_BG_AREA <- st_area(blk_group_ply)
+blk_group_ply$BG_TOTAL_AREA <- (st_area(blk_group_ply) ) 
+
 
 ```
 
@@ -166,6 +169,8 @@ blk_group_ply$TOTAL_BG_AREA <- st_area(blk_group_ply)
 intersections <- st_intersection(TAZ_ply, blk_group_ply) %>%
   st_collection_extract("POLYGON") %>% 
   rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
+
+intersections$INTERSECTION_TOTAL_AREA <- st_area(intersections)
 ```
 
 ### Erase Water From Intersections
@@ -190,65 +195,23 @@ intersections_land$INTERSECTION_LAND_AREA <- st_area(intersections_land)
 
 intersections_land <- intersections_land %>% 
   group_by(GEOID) %>% #grouping by block group
-  mutate(LAND_BG_AREA = sum(INTERSECTION_LAND_AREA))
-
-library(ggplot2)
-ggplot(intersections_land, aes(x = LAND_BG_AREA, y = ALAND)) + geom_smooth(method = "lm") + geom_point() + coord_equal() +  geom_abline(slope = 1) 
-```
-
-# OLD
-
-## Taking out the Water Area
-
-In this section we remove the water from the geography to focus only on "land area".
-
-```{r}
-
-TAZ_land <- tigris::erase_water(TAZ_ply, 
-                                area_threshold = 0.5, 
-                                year = 2020)
-
-blk_groups_land <- tigris::erase_water(blk_group_ply,
-                                       area_threshold = 0.5, 
-                                       year = 2020)
-
-
-mapview(blk_groups_land) + 
-  mapview(TAZ_land, col.regions = "red")
-
-# An alternative path to eliminating "all" water would be to use tigris::area_water() combined with gis operations to subtract it. To make the operations more performant, we could break things down at the county level. 
-```
-
-## Perform Intersections
-
-### Intersections
-
-```{r}
-# The st_intersection command leaves us with "polygons", "lines", and "points" which turn into a "geometrycollection". Lines and points, by definition, have no area and we do not need them. Further, keeping them seems to slow things down. By using `st_collection_extract` we pull out only the piece we need--polygons.
-
-intersections <- st_intersection(TAZ_land, blk_groups_land) %>%
-  st_collection_extract("POLYGON") %>% 
-  rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
-
-intersections$intersect_area <- st_area(intersections)
-
-# mapview(TAZ_land, col.regions = "red") + mapview(blk_groups_land) + mapview(intersections, zcol = "Intersection_ID", legend = FALSE)
+  mutate(BG_LAND_AREA = sum(INTERSECTION_LAND_AREA))
 
 
 ```
 
-We can an explore an example in more detail.
+Example
 
 ```{r}
-# Here's an example of an intersection.
-example <- intersections %>% 
-  filter(ID == 1759) 
 
-mapview(TAZ_land |> 
+example <- intersections_land %>% 
+  filter(ID == 1759)
+
+mapview(TAZ_ply |> 
           filter(ID %in% example$ID), 
         col.regions = "red", 
         layer.name = "TAZ") + 
-  mapview(blk_groups_land |> 
+  mapview(blk_group_ply |> 
             filter(GEOID %in% example$GEOID),
           alpha.regions = 0.01, lwd = 3,
           layer.name = "CBG") + 
@@ -284,7 +247,8 @@ repeat_roof <- rooftops %>% filter(STRUCT_ID %in% repeats$STRUCT_ID) %>%
   select(STRUCT_ID, geometry)
 
 # All NAs will be replaced by a new id
-repeat_roof$STRUCT_ID[is.na(repeat_roof$STRUCT_ID)] <- as.numeric(rownames(repeat_roof))
+repeat_roof <- repeat_roof |> 
+  mutate(STRUCT_ID = coalesce(STRUCT_ID, paste0(row_number(),"_replaced_na") ) )
 
 # Summarizing to get new geometry
 repeat_roof <- repeat_roof %>% 
@@ -325,7 +289,7 @@ We now find which rooftops are in which intersection area.
 
 
 intersections_land <- intersections_land %>% 
-  select(Intersection_ID, ID, GEOID, TOTAL_BG_AREA, INTERSECTION_LAND_AREA, LAND_BG_AREA)
+  select(Intersection_ID, ID, GEOID, BG_TOTAL_AREA, INTERSECTION_TOTAL_AREA, INTERSECTION_LAND_AREA, BG_LAND_AREA)
 
 # Joining the intersection areas with the rooftops that reside inside of them.
 # 
@@ -353,11 +317,11 @@ mapview(roofs_in_intersect_filt, zcol = "Intersection_ID") +
             filter(ID %in% roofs_in_intersect_filt$ID), 
           alpha.region = 0.01, layer.name = "Intersection")
 
-num_rooftops2 <- roofs_in_intersect %>% 
+num_rooftops <- roofs_in_intersect %>% 
   st_drop_geometry() %>% 
   group_by(Intersection_ID) %>% 
   mutate(num_roof = n()) %>% 
-  distinct(Intersection_ID, ID, GEOID, INTERSECTION_LAND_AREA, num_roof)
+  distinct(Intersection_ID, ID, GEOID, BG_TOTAL_AREA, BG_LAND_AREA, INTERSECTION_TOTAL_AREA, INTERSECTION_LAND_AREA, num_roof)
 
 saveRDS(roofs_in_intersect, "data/processed/rooftops_in_intersect.rds")
 saveRDS(num_rooftops, "data/processed/num_rooftops_intersect.rds")
@@ -368,7 +332,7 @@ Looking to see how many rooftops are in multiple intersections
 ```{r}
 roofs_in_intersect2 <- st_join(
   final_roofs,  
-  intersections,
+  intersections_land,
   left= FALSE) %>% 
   group_by(STRUCT_ID) %>% 
   mutate(num_intersections = n()) 
@@ -378,9 +342,9 @@ roofs_in_intersect2 <- roofs_in_intersect2 %>%
   filter(num_intersections > 1)
 
 # 4 intersections: 6 rooftops
-# 3 intersections: 132 rooftops
-# 2 intersections: 87 rooftops
-# Percent of rootops (240492) that are in 3+ intersections: 0.05%
+# 3 intersections: 143 rooftops
+# 2 intersections: 104 rooftops
+# Percent of rootops (240492) that are in 3+ intersections: 0.06%
   
 ```
 
@@ -394,9 +358,7 @@ num_rooftops <-  read_rds("data/processed/num_rooftops_intersect.rds")
 
 # Calculate the share of the GEOID in each TAZ.
 rooftop_share <- num_rooftops |> 
-  group_by(Intersection_ID, GEOID, ID) |> 
-  summarize(num_roof = sum(num_roof)) |> 
-  group_by(GEOID) |>  ## NOTE: Shouldn't we be grouping by ID if we want to find the pct of GEOID in each TAZ? Right now if is showing the share of each TAZ the the GEOID
+  group_by(GEOID) |>  
   mutate(rooftop_pct = num_roof/sum(num_roof))
 
 write_csv(rooftop_share, "./output/data/rooftop_share_plymouth.csv")
@@ -404,20 +366,16 @@ write_csv(rooftop_share, "./output/data/rooftop_share_plymouth.csv")
 
 ```{r}
 # Get population for block groups
-census_pop <- minority %>% 
-  select(c(GEO_ID, P1_001N)) %>% 
-  rename(GEOID = GEO_ID, population_BG = P1_001N)
+census_pop <- minority_tidy %>% 
+  select(c(GEOID, summary_value)) %>% 
+  rename(population_BG = summary_value)
 
 census_pop$GEOID <-str_remove_all(census_pop$GEOID, "1500000US")
 
-pop_percent <- num_rooftops %>% 
-  group_by(GEOID) %>%
-  # per BG: get percentage of rooftops that are in each intersecting TAZ
-  mutate(population_pct = num_roof / sum(num_roof)) %>% 
-  ungroup() %>% 
+pop_percent <- rooftop_share %>% 
   left_join(census_pop) %>% 
   # per BG: get population in each intersecting TAZ
-  mutate(population_intersection = population_pct * as.numeric(population_BG)) %>% 
+  mutate(population_intersection = rooftop_pct * as.numeric(population_BG)) %>% 
   group_by(ID) %>% 
   # per TAZ: add up the population in each intersecting BG
   mutate(population_TAZ_roof = sum(population_intersection)) %>% 
@@ -426,7 +384,7 @@ pop_percent <- num_rooftops %>%
 TAZ_pop_rooftops <- pop_percent %>% 
   distinct(ID, population_TAZ_roof)
 
-TAZ_plot <- TAZ_land %>% 
+TAZ_plot <- TAZ_ply %>% 
   left_join(TAZ_pop_rooftops)
 
 mapview(TAZ_plot, zcol = "population_TAZ_roof")
@@ -439,58 +397,34 @@ mapview(TAZ_plot, zcol = "population_TAZ_roof")
 This performs an intersection and allocation between CBGs and TAZs based on land area (major water features are removed).
 
 ```{r}
-# First step is to separate out water area in each of the intersections to determine what percentage of block group area should be applied to the population for that block group
-
-TAZ_land$TAZ_land_area <- st_area(TAZ_land)
-blk_groups_land$BG_area <- st_area(blk_groups_land) # could also just take ALAND
-
-# Then, for each TAZ, the population of the intersected block groups should be added up.
-
-intersections_AS <- st_intersection(TAZ_land, blk_groups_land) %>% 
-  st_collection_extract("POLYGON") %>% 
-  rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
-
-intersections_AS$intersect_area <- st_area(intersections_AS)
 
 # Create the land area allocation table for export.
-land_area_alloc <- intersections_AS %>% 
-  st_drop_geometry() |> 
-  select(Intersection_ID, ID, TAZ_land_area, GEOID, BG_area, intersect_area) %>%
-  group_by(ID, GEOID, BG_area) %>%
-  summarize(intersect_area = sum(intersect_area)) |> 
+land_area_alloc <- intersections_land %>% 
   group_by(GEOID) |> 
-  # per BG: get percentage of land area that is in each intersecting TAZ
-  mutate(land_area_pct = intersect_area / BG_area,
-         land_area_pct = drop_units(land_area_pct))
+  # per BG: get percentage of GEOID land area that is in each intersection
+  mutate(BG_LA_pct = drop_units(INTERSECTION_LAND_AREA / BG_LAND_AREA))
 
 write_csv(land_area_alloc, "./output/data/landarea_share_plymouth.csv")
 
-land_areas <- intersections_AS %>% 
-  select(Intersection_ID, ID, TAZ_land_area, 
-         GEOID, BG_area, intersect_area) %>%
-  group_by(GEOID) %>% 
-  # per BG: get percentage of land area that is in each intersecting TAZ
-  mutate(BG_land_pct = intersect_area / BG_area) %>% 
-  ungroup() %>% 
+land_areas <- land_area_alloc %>% 
   left_join(census_pop) %>% 
   # per BG: get population in each intersecting TAZ
-  mutate(population_intersection = BG_land_pct * as.numeric(population_BG)) %>% 
+  mutate(population_intersection = BG_LA_pct * as.numeric(population_BG)) %>% 
   group_by(ID) %>% 
   # per TAZ: add up the population in each intersecting BG
-  mutate(population_TAZ_LA = drop_units(sum(population_intersection))) %>% 
+  mutate(population_TAZ_LA = sum(population_intersection)) %>% 
   ungroup()
 
 TAZ_pop_LandArea <- land_areas %>% 
   distinct(ID, population_TAZ_LA)
 
+TAZ_plot <- TAZ_plot %>% 
+  left_join(TAZ_pop_LandArea)
 
 
-# Pct Difference between the two
-diff <- TAZ_pop_rooftops %>% 
-  left_join(TAZ_pop_LandArea) %>% 
-  mutate(pct_diff = population_TAZ_roof / population_TAZ_LA )
+mapview(TAZ_plot, zcol = "population_TAZ_LA")
 
-hist(diff$pct_diff, 40)
+
 
 ```
 
@@ -499,51 +433,40 @@ hist(diff$pct_diff, 40)
 This performs an intersection and allocation between CBGs and TAZs based on all area, including water area.
 
 ```{r}
-blk_group_ply$BG_area <- st_area(blk_group_ply) # could also just take ALAND
-
-# Then, for each TAZ, the population of the intersected block groups should be added up.
-
-intersections_tot <- st_intersection(TAZ_ply, blk_group_ply) %>% 
-  st_collection_extract("POLYGON") %>% 
-  rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
-
-intersections_tot$intersect_area <- st_area(intersections_tot)
 
 # Create the full area (land + water) allocation table for export.
-tot_area_alloc <- intersections_tot %>%
-  st_drop_geometry() |> 
-  select(Intersection_ID, ID, TAZ_area, 
-         GEOID, BG_area, intersect_area) %>%
-  group_by(ID, GEOID, BG_area) %>%
-  summarize(intersect_area = sum(intersect_area)) |> 
+tot_area_alloc <- intersections_land %>%
   group_by(GEOID) |> 
   # per BG: get percentage of all area that is in each intersecting TAZ
-  mutate(all_area_pct = intersect_area / BG_area,
-         all_area_pct = drop_units(all_area_pct))
+  mutate(BG_AA_pct = drop_units(INTERSECTION_TOTAL_AREA / BG_TOTAL_AREA))
 
 write_csv(tot_area_alloc, "./output/data/allarea_share_plymouth.csv")
 
-tot_areas <- intersections_tot %>% 
-  select(Intersection_ID, ID, TAZ_area, GEOID, BG_area, intersect_area) %>%
-  group_by(GEOID) %>% 
-  # per BG: get percentage of all area that is in each intersecting TAZ
-  mutate(BG_tot_pct = intersect_area / BG_area) %>% 
-  ungroup() %>% 
+tot_areas <- tot_area_alloc %>% 
   left_join(census_pop) %>% 
   # per BG: get population in each intersecting TAZ
-  mutate(population_intersection = BG_tot_pct * as.numeric(population_BG)) %>% 
+  mutate(population_intersection = BG_AA_pct * as.numeric(population_BG)) %>% 
   group_by(ID) %>% 
   # per TAZ: add up the population in each intersecting BG
-  mutate(population_TAZ_totA = drop_units(sum(population_intersection))) %>% 
+  mutate(population_TAZ_AA = sum(population_intersection)) %>% 
   ungroup()
 
 TAZ_pop_TotArea <- tot_areas %>% 
-  distinct(ID, population_TAZ_totA)
+  distinct(ID, population_TAZ_AA)
+
+
+TAZ_plot_FINAL <- TAZ_plot %>% 
+  left_join(TAZ_pop_TotArea)
+
+
+mapview(TAZ_plot, zcol = "population_TAZ_AA")
+
+
 
 # Pct Difference between the two
 diff <- TAZ_pop_TotArea %>% 
   left_join(TAZ_pop_LandArea) %>% 
-  mutate(pct_diff = population_TAZ_totA / population_TAZ_LA )
+  mutate(pct_diff = population_TAZ_AA / population_TAZ_LA )
 
 ggplot(diff, aes(x = pct_diff)) +
   geom_histogram(binwidth = 0.25) +
