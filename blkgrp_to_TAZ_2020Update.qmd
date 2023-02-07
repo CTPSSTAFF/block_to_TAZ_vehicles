@@ -121,7 +121,7 @@ rm(block_groups_nocoast)
 
 # Load Population Census Data
 # downloaded from: https://data.census.gov/table?t=Race+and+Ethnicity&g=0400000US25$1500000&tid=DECENNIALPL2020.P1
-minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
+# minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
 
 # P2_005N: Non-Hispanic/Latino, White-alone.
 # P1_001N: Total Population.
@@ -134,7 +134,7 @@ minority_tidy <- tidycensus::get_decennial(
 
 ```
 
-### Only Looking at Plymouth County
+### Filter for Plymouth County
 
 We start by filtering out for just Plymouth County to keep the problem small while we work through the process.
 
@@ -149,17 +149,18 @@ blk_group_ply <- block_groups %>%
   filter(COUNTYFP == "023") %>% 
   group_by(GEOID) %>% 
   summarize()
+
+rm(TAZ, block_groups)
 ```
 
-## Reordering The Steps
+## Calculate Intersecting Areas
 
 ### Find Area of census block groups
 
+We find the area of the census block groups. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
+
 ```{r}
-
 blk_group_ply$BG_TOTAL_AREA <- (st_area(blk_group_ply) ) 
-
-
 ```
 
 ### Intersect census block groups with TAZ
@@ -173,10 +174,13 @@ intersections <- st_intersection(TAZ_ply, blk_group_ply) %>%
 intersections$INTERSECTION_TOTAL_AREA <- st_area(intersections)
 ```
 
+We now have the full area of the CBGs and the area of the intersections.
+
 ### Erase Water From Intersections
 
-```{r}
+We can now remove the water from the intersections. By doing this now, we only remove the water area once.
 
+```{r}
 intersections_land <- tigris::erase_water(intersections, 
                                 area_threshold = 0.5, 
                                 year = 2020)
@@ -184,28 +188,77 @@ intersections_land <- tigris::erase_water(intersections,
 
 ### Recalculate Land Area for the Intersections
 
-```{r}
+We can now recalculate the area to obtain the land area by intersection.
 
+```{r}
 intersections_land$INTERSECTION_LAND_AREA <- st_area(intersections_land)
 ```
 
 ### Find Total Land Area for Census Block Groups
 
 ```{r}
-
 intersections_land <- intersections_land %>% 
   group_by(GEOID) %>% #grouping by block group
   mutate(BG_LAND_AREA = sum(INTERSECTION_LAND_AREA))
-
-
 ```
 
-Example
+For each intersection area we now have the full area, the land area, the full area of the CBG and the land area of the CBG.
+
+### Rejoin to initial intersection dataset
+
+Bring the full dataset back together. We need to join back to the original intersection to maintain all of the "full area". Some of the areas disappear after water is removed. Without these the areas are not fully accounted for.
+
+```{r}
+intersections_for_alloc <- intersections |>
+  st_drop_geometry() |>
+  select(Intersection_ID, ID, GEOID, 
+         INTERSECTION_TOTAL_AREA, BG_TOTAL_AREA) |>
+  left_join(
+    intersections_land |> 
+      st_drop_geometry() |> 
+      select(Intersection_ID, ID, GEOID, 
+             INTERSECTION_LAND_AREA, BG_LAND_AREA),
+    join_by(Intersection_ID, ID, GEOID)) 
+```
+
+## Allocate CBGs to TAZs
+
+### Allocate based on Area
+
+This calculated the relationship between CBGs and TAZs based on land area (LA) and full area (FA). The full area method does have coastal waters stripped away.
+
+```{r}
+area_allocation <- intersections_for_alloc |> 
+  group_by(GEOID) |> 
+    mutate(BG_LA_pct = drop_units(INTERSECTION_LAND_AREA / BG_LAND_AREA),
+           BG_FA_pct = drop_units(INTERSECTION_TOTAL_AREA / BG_TOTAL_AREA) # FA = Full Area.
+           ) |> 
+  select(Intersection_ID, ID, GEOID, 
+         BG_LA_pct, BG_FA_pct )
+
+
+write_csv(area_allocation, "./output/data/all_allocation_plymouth.csv")
+```
+
+#### Check Results
+
+We want to verify that we have maintained area. We want 100% of the area accounted for.
+
+```{r}
+area_allocation |> group_by(GEOID) |> 
+  summarize(tot_LA_in_CBG = sum(BG_LA_pct, na.rm = TRUE),
+            tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE)) |> 
+  view()
+```
+
+Land area is good. All of the CBG area is accounted for. There are some small areas where the TAZ geometry and the CBG geometry does not exactly line up. This appears to be the cause of some small discrepancies in the "full area" method. They appear to be very small \<1%. In the Plymouth county example, some islands off the coast of Hull appear to be missing. These islands are in \`TAZ\$ID == 399\` outside Plymouth County.
+
+##### Explore Areas
 
 ```{r}
 
-example <- intersections_land %>% 
-  filter(ID == 1759)
+example <- intersections %>% 
+  filter(GEOID == 250235001032)
 
 mapview(TAZ_ply |> 
           filter(ID %in% example$ID), 
@@ -219,7 +272,7 @@ mapview(TAZ_ply |>
           layer.name = "Intersection")
 ```
 
-# Allocate based on rooftops
+### Allocate based on rooftops
 
 #### Determine the Number of Rooftops in Each Intersection Area
 
@@ -390,21 +443,11 @@ TAZ_plot <- TAZ_ply %>%
 mapview(TAZ_plot, zcol = "population_TAZ_roof")
 ```
 
-## Allocate based on area
+## Review Population Effects
 
-#### Land Area only
-
-This performs an intersection and allocation between CBGs and TAZs based on land area (major water features are removed).
+#### Land Area
 
 ```{r}
-
-# Create the land area allocation table for export.
-land_area_alloc <- intersections_land %>% 
-  group_by(GEOID) |> 
-  # per BG: get percentage of GEOID land area that is in each intersection
-  mutate(BG_LA_pct = drop_units(INTERSECTION_LAND_AREA / BG_LAND_AREA))
-
-write_csv(land_area_alloc, "./output/data/landarea_share_plymouth.csv")
 
 land_areas <- land_area_alloc %>% 
   left_join(census_pop) %>% 
@@ -424,8 +467,6 @@ TAZ_plot <- TAZ_plot %>%
 
 mapview(TAZ_plot, zcol = "population_TAZ_LA")
 
-
-
 ```
 
 #### Total Area
@@ -433,14 +474,6 @@ mapview(TAZ_plot, zcol = "population_TAZ_LA")
 This performs an intersection and allocation between CBGs and TAZs based on all area, including water area.
 
 ```{r}
-
-# Create the full area (land + water) allocation table for export.
-tot_area_alloc <- intersections_land %>%
-  group_by(GEOID) |> 
-  # per BG: get percentage of all area that is in each intersecting TAZ
-  mutate(BG_AA_pct = drop_units(INTERSECTION_TOTAL_AREA / BG_TOTAL_AREA))
-
-write_csv(tot_area_alloc, "./output/data/allarea_share_plymouth.csv")
 
 tot_areas <- tot_area_alloc %>% 
   left_join(census_pop) %>% 
