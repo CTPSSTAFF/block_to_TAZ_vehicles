@@ -11,3 +11,8 @@ data/base/STRUCTURES_POLY.shp
 data/base/STRUCTURES_POLY.shp.xml
 data/base/STRUCTURES_POLY.shx
 data/processed/rooftops.rds
+output/data/rooftop_share_plymouth_largest_in_each.csv
+output/data/landarea_share_plymouth.csv
+output/data/allarea_share_plymouth.csv
+data/processed/roof_taz.rds
+data/processed/roof_cbg.rds
