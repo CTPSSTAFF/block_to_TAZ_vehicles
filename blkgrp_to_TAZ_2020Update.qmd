@@ -247,11 +247,12 @@ We want to verify that we have maintained area. We want 100% of the area account
 ```{r}
 area_allocation |> group_by(GEOID) |> 
   summarize(tot_LA_in_CBG = sum(BG_LA_pct, na.rm = TRUE),
-            tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE)) |> 
-  view()
+            tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE)) |>
+  ungroup() |> 
+  filter(tot_FA_in_CBG < 0.999 | tot_LA_in_CBG < 0.999)
 ```
 
-Land area is good. All of the CBG area is accounted for. There are some small areas where the TAZ geometry and the CBG geometry does not exactly line up. This appears to be the cause of some small discrepancies in the "full area" method. They appear to be very small \<1%. In the Plymouth county example, some islands off the coast of Hull appear to be missing. These islands are in \`TAZ\$ID == 399\` outside Plymouth County.
+Land area is good. All of the CBG area is accounted for. For the full area method there are some small areas where the TAZ geometry and the CBG geometry does not exactly line up. This appears to be the cause of some small discrepancies in the "full area" method. They appear to be very small \<1%. In the Plymouth county example, some islands off the coast of Hull appear to be missing. These islands are in \`TAZ\$ID == 399\` outside Plymouth County.
 
 ##### Explore Areas
 
