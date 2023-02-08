@@ -230,8 +230,11 @@ This calculated the relationship between CBGs and TAZs based on land area (LA) a
 ```{r}
 area_allocation <- intersections_for_alloc |> 
   group_by(GEOID) |> 
-    mutate(BG_LA_pct = drop_units(INTERSECTION_LAND_AREA / BG_LAND_AREA),
-           BG_FA_pct = drop_units(INTERSECTION_TOTAL_AREA / BG_TOTAL_AREA) # FA = Full Area.
+    mutate(BG_LA_pct = 
+             drop_units(INTERSECTION_LAND_AREA / BG_LAND_AREA),
+           BG_FA_pct = 
+             drop_units(INTERSECTION_TOTAL_AREA / BG_TOTAL_AREA) 
+             # FA = Full Area.
            ) |> 
   select(Intersection_ID, ID, GEOID, 
          BG_LA_pct, BG_FA_pct )
