@@ -290,29 +290,35 @@ mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 ```{r}
 
 # Find the IDs of repeats and how many times they are repeated
-repeats <- rooftops |> st_drop_geometry() |> group_by(STRUCT_ID) |> tally() |> filter(n>1)
+repeats <- rooftops |> 
+  st_drop_geometry() |> 
+  group_by(STRUCT_ID) |> 
+  tally() |> 
+  filter(n>1)
 # View(repeats)
 
-# Find the rooftops with unique STRUCT_IDs
+# Find the rooftops with unique STRUCT_IDs. These roofs do not need to be filtered.
 unique_roof <- rooftops %>% filter(!(STRUCT_ID %in% repeats$STRUCT_ID)) %>% 
   select(STRUCT_ID, geometry)
-# Find the rooftops with repeated or NA STRUCT_IDs
+
+# Find the rooftops with repeated or NA STRUCT_IDs. These roofs need to be cleaned.
 repeat_roof <- rooftops %>% filter(STRUCT_ID %in% repeats$STRUCT_ID) %>% 
   select(STRUCT_ID, geometry)
 
+## Clean NAs
 # All NAs will be replaced by a new id
 repeat_roof <- repeat_roof |>
   mutate(STRUCT_ID = coalesce(STRUCT_ID, paste0(row_number(), "_replaced_na")))
 
-# Summarizing to get new geometry
+# Roofs with duplicate ids will be merged into a single roof.
 repeat_roof <- repeat_roof %>% 
   group_by(STRUCT_ID) %>% 
   summarize() 
 
-mapview(repeat_roof)
+#mapview(repeat_roof)
 
 # combining the rooftops with unique ids with new summarized roof geometries
-final_roofs <- bind_rows(unique_roof, repeat_roof)
+rooftops_clean <- bind_rows(unique_roof, repeat_roof)
 
 rm(rooftops)
 
@@ -336,7 +342,7 @@ rm(rooftops)
 ```{r}
 tictoc::tic()
 roof_cbg <- st_join(
-  final_roofs,
+  rooftops_clean,
   blk_group_ply |> select(GEOID),
   left = FALSE,
   largest = TRUE
@@ -345,8 +351,7 @@ tictoc::toc()
 
 tictoc::tic()
 roof_taz <- st_join(
-  final_roofs |>
-    filter(STRUCT_ID %in% roof_cbg$STRUCT_ID),
+  rooftops_clean,
   TAZ_ply |> select(ID),
   left = FALSE,
   largest = TRUE
@@ -356,7 +361,7 @@ tictoc::toc()
 # Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
 
 tictoc::tic()
-roof_shares <- final_roofs |> 
+roof_shares <- rooftops_clean |> 
   filter(STRUCT_ID %in% roof_cbg$STRUCT_ID) |> 
   left_join(roof_cbg, by = "STRUCT_ID") |> 
   left_join(roof_taz, by = "STRUCT_ID")
