@@ -331,8 +331,7 @@ rm(rooftops)
 
 #### Find which CBG and which TAZ each rooftop is most in
 
-1\) Intersect with CBGs
-2\) intersect with TAZs.
+1\) Intersect with CBGs 2) intersect with TAZs.
 
 ```{r}
 tictoc::tic()
@@ -369,7 +368,7 @@ tictoc::toc()
 
 roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
 roof_taz <- readRDS("./data/processed/roof_taz.rds")
-roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
+roof_shares <- readRDS("./data/processed/roof_shares.rds")
 
 tictoc::tic()
 roof_shares_ratio <- roof_shares |> 
