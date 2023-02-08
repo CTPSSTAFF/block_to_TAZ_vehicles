@@ -291,7 +291,7 @@ mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 
 # Find the IDs of repeats and how many times they are repeated
 repeats <- rooftops |> st_drop_geometry() |> group_by(STRUCT_ID) |> tally() |> filter(n>1)
-View(repeats)
+# View(repeats)
 
 # Find the rooftops with unique STRUCT_IDs
 unique_roof <- rooftops %>% filter(!(STRUCT_ID %in% repeats$STRUCT_ID)) %>% 
