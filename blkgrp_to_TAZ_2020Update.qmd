@@ -367,9 +367,9 @@ tictoc::toc()
 # saveRDS(roof_taz, "./data/processed/roof_taz.rds")
 # saveRDS(roof_shares, "./data/processed/roof_shares.rds")
 
-# roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
-# roof_taz <- readRDS("./data/processed/roof_taz.rds")
-# roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
+roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
+roof_taz <- readRDS("./data/processed/roof_taz.rds")
+roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
 
 tictoc::tic()
 roof_shares_ratio <- roof_shares |> 
