@@ -434,7 +434,7 @@ intersections_land <- intersections_land %>%
 # https://jamboard.google.com/d/1L5YrUrmOUpmQp8X6w2gaz51Fz6We8b0uV-Hm5g4aU2E/viewer?ts=63d15e99&f=1
 # This took a very long time
 roofs_in_intersect <- st_join(
-  final_roofs,  
+  rooftops_clean,  
   intersections_land,
   left= FALSE, # inner join
   largest = TRUE)
@@ -463,7 +463,7 @@ Looking to see how many rooftops are in multiple intersections
 
 ```{r}
 roofs_in_intersect2 <- st_join(
-  final_roofs,  
+  rooftops_clean,  
   intersections_land,
   left= FALSE) %>% 
   group_by(STRUCT_ID) %>% 
