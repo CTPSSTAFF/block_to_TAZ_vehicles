@@ -228,8 +228,12 @@ area_allocation <- intersections_for_alloc |>
              # FA = Full Area.
            ) |> 
   select(Intersection_ID, ID, GEOID, 
-         BG_LA_pct, BG_FA_pct )
+         BG_LA_pct, BG_FA_pct)
 
+area_allocation <- area_allocation |> 
+  group_by(GEOID, ID) |> 
+  summarize(BG_LA_pct = sum(BG_LA_pct, na.rm = TRUE),
+            BG_FA_pct = sum(BG_FA_pct, na.rm = TRUE))
 
 write_csv(area_allocation, "./output/data/area_allocation_plymouth.csv")
 ```
@@ -624,15 +628,19 @@ allocation_results <- allocation_results |>
 
 ### Testing
 
+Check that we have retained all of our GEOID area.
+
 ```{r}
-TODO 
+
 allocation_results |> group_by(GEOID) |> 
   summarize(tot_LA_in_CBG = sum(BG_LA_pct, na.rm = TRUE),
             tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE),
             tot_RT_in_CBG = sum(BG_RT_pct, na.rm = TRUE)
             ) |>
   ungroup() |> 
-  filter(tot_FA_in_CBG < 0.999 | tot_LA_in_CBG < 0.999)
+  filter(tot_FA_in_CBG < 0.999 | 
+           tot_LA_in_CBG < 0.999 |
+           tot_RT_in_CBG < 0.999)
 ```
 
 ### Compare Population Estimates
