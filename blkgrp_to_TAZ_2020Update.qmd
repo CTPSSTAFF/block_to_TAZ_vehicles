@@ -285,11 +285,11 @@ rooftops <- read_rds("./data/processed/rooftops.rds")
 mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 ```
 
-#### Looking at repeated and NA IDs for rooftops
+#### Cleaning duplicate and NA rooftop IDs.
 
 ```{r}
 
-# Find the IDs of repeats and how many times they are repeated
+# Find the IDs of dupes/repeats and how many times they are repeated
 repeats <- rooftops |> 
   st_drop_geometry() |> 
   group_by(STRUCT_ID) |> 
@@ -317,7 +317,7 @@ repeat_roof <- repeat_roof %>%
 
 #mapview(repeat_roof)
 
-# combining the rooftops with unique ids with new summarized roof geometries
+# combining the rooftops with unique ids with new clean roofs
 rooftops_clean <- bind_rows(unique_roof, repeat_roof)
 
 rm(rooftops)
@@ -337,7 +337,8 @@ rm(rooftops)
 
 #### Find which CBG and which TAZ each rooftop is most in
 
-1\) Intersect with CBGs 2) intersect with TAZs.
+1.  Intersect with CBGs
+2.  Intersect with TAZs.
 
 ```{r}
 tictoc::tic()
@@ -360,20 +361,19 @@ tictoc::toc()
 
 # Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
 
-tictoc::tic()
 roof_shares <- rooftops_clean |> 
+  st_drop_geometry() |> 
   filter(STRUCT_ID %in% roof_cbg$STRUCT_ID) |> 
   left_join(roof_cbg, by = "STRUCT_ID") |> 
   left_join(roof_taz, by = "STRUCT_ID")
-tictoc::toc()
 
-# saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
-# saveRDS(roof_taz, "./data/processed/roof_taz.rds")
-# saveRDS(roof_shares, "./data/processed/roof_shares.rds")
+saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
+saveRDS(roof_taz, "./data/processed/roof_taz.rds")
+saveRDS(roof_shares, "./data/processed/roof_shares.rds")
 
-roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
-roof_taz <- readRDS("./data/processed/roof_taz.rds")
-roof_shares <- readRDS("./data/processed/roof_shares.rds")
+#roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
+#roof_taz <- readRDS("./data/processed/roof_taz.rds")
+#roof_shares <- readRDS("./data/processed/roof_shares.rds")
 
 tictoc::tic()
 roof_shares_ratio <- roof_shares |> 
@@ -390,8 +390,10 @@ write_csv(roof_shares_ratio, file = "./output/data/rooftop_share_plymouth_larges
 
 ```{r}
 
-example <- roof_shares %>% 
-  filter(GEOID == 250235001011)
+example <- rooftops_clean |> 
+  filter(GEOID == 250235001011) |> 
+  left_join(roof_cbg, by = "STRUCT_ID") |> 
+  left_join(roof_taz, by = "STRUCT_ID")
 
 mapview(TAZ_ply |> 
           filter(ID %in% example$ID), 
