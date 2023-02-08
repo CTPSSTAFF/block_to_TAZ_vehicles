@@ -123,15 +123,6 @@ rm(block_groups_nocoast)
 # downloaded from: https://data.census.gov/table?t=Race+and+Ethnicity&g=0400000US25$1500000&tid=DECENNIALPL2020.P1
 # minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
 
-# P2_005N: Non-Hispanic/Latino, White-alone.
-# P1_001N: Total Population.
-minority_tidy <- tidycensus::get_decennial(
-  geography = "block group",
-  state = "MA",
-  variable = "P2_005N",
-  summary_var = "P1_001N",
-  year = 2020)
-
 ```
 
 ### Filter for Plymouth County
@@ -240,7 +231,7 @@ area_allocation <- intersections_for_alloc |>
          BG_LA_pct, BG_FA_pct )
 
 
-write_csv(area_allocation, "./output/data/all_allocation_plymouth.csv")
+write_csv(area_allocation, "./output/data/area_allocation_plymouth.csv")
 ```
 
 #### Check Results
@@ -323,7 +314,7 @@ repeat_roof <- repeat_roof %>%
 # combining the rooftops with unique ids with new clean roofs
 rooftops_clean <- bind_rows(unique_roof, repeat_roof)
 
-rm(rooftops)
+rm(rooftops, unique_roof, repeat_roof)
 
 # Some of the repeats are where there are buildings for schools, like UMass Boston
 # Others are where there are multiple polygons that have the same struct ID and just look like a main building with an extra attachment.  
@@ -384,17 +375,20 @@ roof_shares_ratio <- roof_shares |>
   group_by(GEOID,ID) |> 
   summarize(tot_roofs = n()) |> 
   group_by(GEOID) |> 
-  mutate(pct = tot_roofs/sum(tot_roofs))
+  mutate(BG_RT_pct = tot_roofs/sum(tot_roofs))
 tictoc::toc()
 
-write_csv(roof_shares_ratio, file = "./output/data/rooftop_share_plymouth_largest_in_each.csv")
+write_csv(roof_shares_ratio, file = "./output/data/rooftop_allocation_plymouth_largest_in_each.csv")
 
 ```
 
 ```{r}
 
+roof_share_filter <- roof_cbg |> 
+  filter(GEOID == 250235001011)
+
 example <- rooftops_clean |> 
-  filter(GEOID == 250235001011) |> 
+  filter(STRUCT_ID %in% roof_share_filter$STRUCT_ID) |> 
   left_join(roof_cbg, by = "STRUCT_ID") |> 
   left_join(roof_taz, by = "STRUCT_ID")
 
@@ -409,6 +403,8 @@ mapview(TAZ_ply |>
   mapview(example, zcol = "STRUCT_ID",
           layer.name = "Roof")
 ```
+
+#### Intersection Area Approach
 
 We now find which rooftops are in which intersection area.
 
@@ -602,16 +598,42 @@ hist(diff$pct_diff, 80)
 ## Join the Roofs, Land Area, All Area Methods
 
 ```{r}
-# Join them all down here for exploration.
+# Join the area and roof-based methods here.
+area <- read_csv("./output/data/area_allocation_plymouth.csv")
+roof <- read_csv("./output/data/rooftop_allocation_plymouth_largest_in_each.csv") |> select(-tot_roofs)
 
-joined_estimates <- TAZ_pop_rooftops %>% 
-  left_join(TAZ_pop_LandArea) %>% 
-  left_join((TAZ_pop_TotArea))
+allocation_results <- full_join(area, roof, by = join_by(ID, GEOID))
 
-# Import the census block group pops once, then mutiply the populations here. 
+# Import the census block group info for MA. 
+
+# P2_005N: Non-Hispanic/Latino, White-alone.
+# P1_001N: Total Population.
+minority_tidy <- tidycensus::get_decennial(
+  geography = "block group",
+  state = "MA",
+  variable = "P2_005N",
+  summary_var = "P1_001N",
+  year = 2020) |> 
+  select(GEOID, min_pop = value, tot_pop = summary_value) |> 
+  mutate(GEOID = as.numeric(GEOID))
+
+# Join the population to the CBGs.
+allocation_results <- allocation_results |> 
+  left_join(minority_tidy, by = join_by(GEOID))
 ```
 
 ### Testing
+
+```{r}
+TODO 
+allocation_results |> group_by(GEOID) |> 
+  summarize(tot_LA_in_CBG = sum(BG_LA_pct, na.rm = TRUE),
+            tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE),
+            tot_RT_in_CBG = sum(BG_RT_pct, na.rm = TRUE)
+            ) |>
+  ungroup() |> 
+  filter(tot_FA_in_CBG < 0.999 | tot_LA_in_CBG < 0.999)
+```
 
 ### Compare Population Estimates
 
