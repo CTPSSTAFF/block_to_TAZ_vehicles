@@ -275,9 +275,9 @@ mapview(TAZ_ply |>
 
 ### Allocate based on rooftops
 
-#### Determine the Number of Rooftops in Each Intersection Area
+We want to find the intersection of rooftops and the CBGs and TAZs.
 
-We pull the pre-stored rooftops file in and show an example. Feel free to see how the file matches the footprints in the OSM layer and the aerial satellite layer.
+We pull the pre-stored rooftops file in and show an example. The file generally matches the footprints in the OSM layer and the aerial satellite layer.
 
 ```{r}
 # rooftops.rds reated previously.
@@ -285,7 +285,7 @@ rooftops <- read_rds("./data/processed/rooftops.rds")
 mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 ```
 
-Looking at repeated and NA IDs for rooftops
+#### Looking at repeated and NA IDs for rooftops
 
 ```{r}
 
@@ -301,8 +301,8 @@ repeat_roof <- rooftops %>% filter(STRUCT_ID %in% repeats$STRUCT_ID) %>%
   select(STRUCT_ID, geometry)
 
 # All NAs will be replaced by a new id
-repeat_roof <- repeat_roof |> 
-  mutate(STRUCT_ID = coalesce(STRUCT_ID, paste0(row_number(),"_replaced_na") ) )
+repeat_roof <- repeat_roof |>
+  mutate(STRUCT_ID = coalesce(STRUCT_ID, paste0(row_number(), "_replaced_na")))
 
 # Summarizing to get new geometry
 repeat_roof <- repeat_roof %>% 
@@ -313,6 +313,8 @@ mapview(repeat_roof)
 
 # combining the rooftops with unique ids with new summarized roof geometries
 final_roofs <- bind_rows(unique_roof, repeat_roof)
+
+rm(rooftops)
 
 # Some of the repeats are where there are buildings for schools, like UMass Boston
 # Others are where there are multiple polygons that have the same struct ID and just look like a main building with an extra attachment.  
@@ -325,6 +327,78 @@ final_roofs <- bind_rows(unique_roof, repeat_roof)
 #x <- head(NA_rooftops,1)
 #mapview(x)
 # NA struct IDs seem to be random
+```
+
+#### Find which CBG and which TAZ each rooftop is most in
+
+1\) Intersect with CBGs
+2\) intersect with TAZs.
+
+```{r}
+tictoc::tic()
+roof_cbg <- st_join(
+  final_roofs,
+  blk_group_ply |> select(GEOID),
+  left = FALSE,
+  largest = TRUE
+) |> st_drop_geometry()
+tictoc::toc()
+
+tictoc::tic()
+roof_taz <- st_join(
+  final_roofs |>
+    filter(STRUCT_ID %in% roof_cbg$STRUCT_ID),
+  TAZ_ply |> select(ID),
+  left = FALSE,
+  largest = TRUE
+)|> st_drop_geometry()
+tictoc::toc()
+
+# Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
+
+tictoc::tic()
+roof_shares <- final_roofs |> 
+  filter(STRUCT_ID %in% roof_cbg$STRUCT_ID) |> 
+  left_join(roof_cbg, by = "STRUCT_ID") |> 
+  left_join(roof_taz, by = "STRUCT_ID")
+tictoc::toc()
+
+# saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
+# saveRDS(roof_taz, "./data/processed/roof_taz.rds")
+# saveRDS(roof_shares, "./data/processed/roof_shares.rds")
+
+# roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
+# roof_taz <- readRDS("./data/processed/roof_taz.rds")
+# roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
+
+tictoc::tic()
+roof_shares_ratio <- roof_shares |> 
+  st_drop_geometry() |> 
+  group_by(GEOID,ID) |> 
+  summarize(tot_roofs = n()) |> 
+  group_by(GEOID) |> 
+  mutate(pct = tot_roofs/sum(tot_roofs))
+tictoc::toc()
+
+write_csv(roof_shares_ratio, file = "./output/data/rooftop_share_plymouth_largest_in_each.csv")
+
+```
+
+```{r}
+
+example <- roof_shares %>% 
+  filter(GEOID == 250235001011)
+
+mapview(TAZ_ply |> 
+          filter(ID %in% example$ID), 
+        col.regions = "red", 
+        layer.name = "TAZ") + 
+  mapview(blk_group_ply |> 
+            filter(GEOID %in% example$GEOID),
+          alpha.regions = 0.01, lwd = 3,
+          layer.name = "CBG") + 
+  mapview(example, zcol = "STRUCT_ID",
+          layer.name = "Roof")
 ```
 
 We now find which rooftops are in which intersection area.
