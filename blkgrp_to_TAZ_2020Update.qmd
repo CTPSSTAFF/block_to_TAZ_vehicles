@@ -607,7 +607,7 @@ area <- read_csv("./output/data/area_allocation_plymouth.csv")
 roof <- read_csv("./output/data/rooftop_allocation_plymouth_largest_in_each.csv") |> select(-tot_roofs)
 
 # Put each of the three methodologies together into a single table. # We can use this table as the basis for our comparisons and tests.
-allocation_results <- full_join(area, roof, by = join_by(ID, GEOID))
+allocation_results <- full_join(area, roof)
 
 # Import the census block group info for MA. 
 
@@ -623,8 +623,20 @@ minority_tidy <- tidycensus::get_decennial(
   mutate(GEOID = as.numeric(GEOID))
 
 # Join the population to the CBGs.
-allocation_results <- allocation_results |> 
-  left_join(minority_tidy, by = join_by(GEOID))
+TAZ_results <- allocation_results |> 
+  left_join(minority_tidy) %>% 
+  mutate(BG_LA_min = BG_LA_pct * min_pop, BG_FA_min = BG_FA_pct* min_pop, BG_RT_min = BG_RT_pct * min_pop) %>% 
+  mutate(BG_LA_tot = BG_LA_pct * tot_pop, BG_FA_tot = BG_FA_pct* tot_pop, BG_RT_tot = BG_RT_pct * tot_pop) %>% 
+  group_by(ID) %>% 
+  summarize(LA_min = sum(BG_LA_min, na.rm=TRUE),
+            FA_min = sum(BG_FA_min, na.rm=TRUE),
+            RT_min = sum(BG_RT_min, na.rm=TRUE),
+            LA_tot = sum(BG_LA_tot, na.rm=TRUE),
+            FA_tot = sum(BG_FA_tot, na.rm=TRUE),
+            RT_tot = sum(BG_RT_tot, na.rm=TRUE))
+  
+
+
 ```
 
 ### Testing
@@ -647,6 +659,25 @@ allocation_results |> group_by(GEOID) |>
 ### Compare Population Estimates
 
 ```{r}
+
+library(GGally)
+
+min_results <- TAZ_results %>% 
+  select(LA_min, FA_min, RT_min)
+
+tot_results <- TAZ_results %>% 
+  select(LA_tot, FA_tot, RT_tot)
+
+percentages <- TAZ_results %>% 
+  mutate(LA_pct_min = 100 * LA_min / LA_tot,
+         FA_pct_min = 100 * FA_min / FA_tot,
+         RT_pct_min = 100 * RT_min / RT_tot) %>% 
+  select(LA_pct_min, FA_pct_min, RT_pct_min )
+
+ggpairs(min_results, title="Correlogram For Minority Pop") 
+ggpairs(tot_results, title="Correlogram For Total Pop")
+ggpairs(percentages, title="Correlogram For Percent Minority")
+
 ```
 
 ### Test minority share
