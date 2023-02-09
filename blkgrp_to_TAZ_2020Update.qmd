@@ -628,7 +628,7 @@ allocation_results <- allocation_results |>
 
 ### Testing
 
-Check that we have retained all of our GEOID area.
+Check that we have retained all of our GEOID area. These values should add up to 100% or 1.0. The areas that do not are very small and may be solved when the script is scaled to include a larger area instead of a single county.
 
 ```{r}
 
