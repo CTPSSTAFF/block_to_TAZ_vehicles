@@ -76,6 +76,7 @@ library(tigris)
 library(mapview)
 library(sf)
 library(units)
+library(rgeos)
 ```
 
 ## Load Census, TAZ, and Rooftop Shapes
@@ -142,6 +143,36 @@ blk_group_ply <- block_groups %>%
   summarize()
 
 rm(TAZ, block_groups)
+```
+
+### Filter For MPO Region
+
+```{r}
+
+TAZ_MPO <- TAZ %>% 
+  filter(RPA == "MAPC")
+
+TAZ_buffer <- TAZ_MPO %>% 
+  st_union() %>% 
+  st_buffer(dist = 1000)
+
+TAZ_MPO_buffer <- TAZ[TAZ_buffer,]
+
+
+mapview(TAZ_MPO_buffer) +  mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
+
+
+
+blk_group_MPO <- block_groups[TAZ_MPO,]
+
+blk_group_MPO_buffer <- block_groups[TAZ_buffer,] #%>% 
+#   filter(COUNTYFP == "023") %>% 
+#   group_by(GEOID) %>% 
+#   summarize()
+
+mapview(blk_group_MPO) +  mapview(TAZ_MPO, alpha.regions = 0.01, lwd = 3)
+
+
 ```
 
 ## Calculate Intersecting Areas
@@ -342,7 +373,7 @@ rm(rooftops, unique_roof, repeat_roof)
 tictoc::tic()
 roof_cbg <- st_join(
   rooftops_clean,
-  blk_group_ply |> select(GEOID),
+  blk_group_MPO_buffer |> select(GEOID),
   left = FALSE,
   largest = TRUE
 ) |> st_drop_geometry()
@@ -351,30 +382,38 @@ tictoc::toc()
 tictoc::tic()
 roof_taz <- st_join(
   rooftops_clean,
-  TAZ_ply |> select(ID),
+  TAZ_MPO_buffer |> select(ID, RPA),
   left = FALSE,
   largest = TRUE
 )|> st_drop_geometry()
 tictoc::toc()
 
-# Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
 
-roof_shares <- rooftops_clean |> 
+# get rid of rooftops that are mostly not in the MPO taz or bgs
+roof_cbg_MPO <- roof_cbg %>% 
+  filter(GEOID %in% blk_group_MPO$GEOID)
+
+roof_taz_MPO <- roof_taz %>% 
+  filter(RPA == "MAPC")
+
+
+# Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
+roof_shares_MPO <- rooftops_clean |> 
   st_drop_geometry() |> 
   filter(STRUCT_ID %in% roof_cbg$STRUCT_ID) |> 
-  left_join(roof_cbg, by = "STRUCT_ID") |> 
-  left_join(roof_taz, by = "STRUCT_ID")
+  left_join(roof_cbg_MPO, by = "STRUCT_ID") |> 
+  left_join(roof_taz_MPO, by = "STRUCT_ID")
 
-saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
-saveRDS(roof_taz, "./data/processed/roof_taz.rds")
-saveRDS(roof_shares, "./data/processed/roof_shares.rds")
+saveRDS(roof_cbg_MPO, "./data/processed/roof_cbg_MPO.rds")
+saveRDS(roof_taz_MPO, "./data/processed/roof_taz_MPO.rds")
+saveRDS(roof_shares_MPO, "./data/processed/roof_shares_MPO.rds")
 
 #roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
 #roof_taz <- readRDS("./data/processed/roof_taz.rds")
 #roof_shares <- readRDS("./data/processed/roof_shares.rds")
 
 tictoc::tic()
-roof_shares_ratio <- roof_shares |> 
+roof_shares_ratio <- roof_shares_MPO |> 
   st_drop_geometry() |> 
   group_by(GEOID,ID) |> 
   summarize(tot_roofs = n()) |> 
@@ -382,7 +421,7 @@ roof_shares_ratio <- roof_shares |>
   mutate(BG_RT_pct = tot_roofs/sum(tot_roofs))
 tictoc::toc()
 
-write_csv(roof_shares_ratio, file = "./output/data/rooftop_allocation_plymouth_largest_in_each.csv")
+write_csv(roof_shares_ratio, file = "./output/data/rooftop_allocation_MPO_largest_in_each.csv")
 
 ```
 
