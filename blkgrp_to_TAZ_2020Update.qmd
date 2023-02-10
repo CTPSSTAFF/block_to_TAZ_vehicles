@@ -209,7 +209,7 @@ intersections_for_alloc <- intersections |>
       st_drop_geometry() |> 
       select(Intersection_ID, ID, GEOID, 
              INTERSECTION_LAND_AREA, BG_LAND_AREA),
-    join_by(Intersection_ID, ID, GEOID)) 
+    by = c("Intersection_ID", "ID", "GEOID")) 
 ```
 
 ## Allocate CBGs to TAZs
