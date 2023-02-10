@@ -149,22 +149,26 @@ rm(TAZ, block_groups)
 
 ```{r}
 
+# MPO region TAZ
 TAZ_MPO <- TAZ %>% 
   filter(RPA == "MAPC")
 
+# MPO region + buffer
 TAZ_buffer <- TAZ_MPO %>% 
   st_union() %>% 
   st_buffer(dist = 1000)
 
+# MPO region + buffer TAZ
 TAZ_MPO_buffer <- TAZ[TAZ_buffer,]
 
 
 mapview(TAZ_MPO_buffer) +  mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
 
 
-
+# MPO region BG
 blk_group_MPO <- block_groups[TAZ_MPO,]
 
+# MPO region + buffer BG
 blk_group_MPO_buffer <- block_groups[TAZ_buffer,] #%>% 
 #   filter(COUNTYFP == "023") %>% 
 #   group_by(GEOID) %>% 
