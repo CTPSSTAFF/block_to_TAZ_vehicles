@@ -667,9 +667,13 @@ minority_tidy <- tidycensus::get_decennial(
 
 # Join the population to the CBGs.
 TAZ_results <- allocation_results |> 
-  left_join(minority_tidy) %>% 
-  mutate(BG_LA_min = BG_LA_pct * min_pop, BG_FA_min = BG_FA_pct* min_pop, BG_RT_min = BG_RT_pct * min_pop) %>% 
-  mutate(BG_LA_tot = BG_LA_pct * tot_pop, BG_FA_tot = BG_FA_pct* tot_pop, BG_RT_tot = BG_RT_pct * tot_pop) %>% 
+  left_join(minority_tidy, by = "GEOID") %>% 
+  mutate(BG_LA_min = BG_LA_pct * min_pop, 
+         BG_FA_min = BG_FA_pct* min_pop, 
+         BG_RT_min = BG_RT_pct * min_pop) %>% 
+  mutate(BG_LA_tot = BG_LA_pct * tot_pop, 
+         BG_FA_tot = BG_FA_pct* tot_pop, 
+         BG_RT_tot = BG_RT_pct * tot_pop) %>% 
   group_by(ID) %>% 
   summarize(LA_min = sum(BG_LA_min, na.rm=TRUE),
             FA_min = sum(BG_FA_min, na.rm=TRUE),
@@ -678,8 +682,6 @@ TAZ_results <- allocation_results |>
             FA_tot = sum(BG_FA_tot, na.rm=TRUE),
             RT_tot = sum(BG_RT_tot, na.rm=TRUE))
   
-
-
 ```
 
 ### Testing
