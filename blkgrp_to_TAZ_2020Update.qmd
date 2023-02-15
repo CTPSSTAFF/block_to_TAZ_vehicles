@@ -118,12 +118,6 @@ rm(block_groups_nocoast)
 # rooftops <- st_read("data/base/STRUCTURES_POLY.shp")
 # 
 # saveRDS(rooftops, "data/processed/rooftops.rds")
-
-
-# Load Population Census Data
-# downloaded from: https://data.census.gov/table?t=Race+and+Ethnicity&g=0400000US25$1500000&tid=DECENNIALPL2020.P1
-# minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
-
 ```
 
 ### Filter for Plymouth County
@@ -147,6 +141,8 @@ rm(TAZ, block_groups)
 
 ### Filter For MPO Region
 
+We would like to grab the TAZs in the MPO and CBG that touch or may contribute area to those TAZs. We slightly buffer the TAZs to capture CBGs that might share a roof in a TAZ but may not be captured in a simple `st_contains` join--though `st_within` could work.
+
 ```{r}
 
 # MPO region TAZ
@@ -156,16 +152,15 @@ TAZ_MPO <- TAZ %>%
 # MPO region + buffer
 TAZ_buffer <- TAZ_MPO %>% 
   st_union() %>% 
-  st_buffer(dist = 1000)
+  st_buffer(dist = 100)
 
+# Pull all the TAZs within a 100m buffer of MPO TAZs.
 # MPO region + buffer TAZ
 TAZ_MPO_buffer <- TAZ[TAZ_buffer,]
 
+# mapview(TAZ_MPO_buffer) + mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
 
-mapview(TAZ_MPO_buffer) +  mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
-
-
-# MPO region BG
+# MPO region BG. These are all the block groups touching the MPOs in the TAZ.
 blk_group_MPO <- block_groups[TAZ_MPO,]
 
 # MPO region + buffer BG
@@ -174,9 +169,12 @@ blk_group_MPO_buffer <- block_groups[TAZ_buffer,] #%>%
 #   group_by(GEOID) %>% 
 #   summarize()
 
-mapview(blk_group_MPO) +  mapview(TAZ_MPO, alpha.regions = 0.01, lwd = 3)
+mapview(blk_group_MPO) +  
+  mapview(blk_group_MPO_buffer, col.regions = "red") +  
 
-
+  mapview(TAZ_MPO |> st_union(), alpha.regions = 0.01, lwd = 3) +
+  mapview(TAZ_MPO_buffer) + 
+  mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
 ```
 
 ## Calculate Intersecting Areas
@@ -192,7 +190,6 @@ blk_group_ply$BG_TOTAL_AREA <- (st_area(blk_group_ply) )
 ### Intersect census block groups with TAZ
 
 ```{r}
-
 intersections <- st_intersection(TAZ_ply, blk_group_ply) %>%
   st_collection_extract("POLYGON") %>% 
   rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
