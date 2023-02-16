@@ -8,22 +8,6 @@ format:
 editor: visual
 ---
 
-**TODO**:
-
--   Remove duplicate rooftops: \`rooftops \|\> st_drop_geometry() \|\> group_by(STRUCT_ID) \|\> tally() \|\> filter(n\>1) \|\> View()\` Example: STRUCT_ID == "250858_862528". There are also STRUCT_IDs with values of "NA" that we should explore. Are they duplicate? Are they just unlabeled?
--   Remove vestigial commented out code. It's going to be confusing.
--   Export only the allocation table: GEOID, TAZ, share_of_geoid_to_TAZ_method1 (then repeat for methods 2 and 3). Once you're happy you can join them together to compare. In the end, we'll keep one method. We also want to be able to attach the dasymetric method later too.
--   Check the all area calc to see if the coast line is included. We really dont need that no matter what. It may just be a not great method and we dont worry much about it.
--   Check the number of CBG to TAZ relationships that exist. They ought to be the same(?) if we include 0% shares, which might not appear in a table.
--   Look at building footprints dataset for whole country by Microsoft- Emily
-
-Notes:
-
--   You don't have to wrap select() arguments in c().
--   Using tidycensus gives you a cleaner table to start with rather than grabbing a flat file from the census and storing in in a folder. The end result should be the same.
--   You could do all the land area/rooftop/water area joins in one steps if you calc it at the start then keep track of it all. alternatively we can just keep this as is, then create a fresh notebook with the chosen solution.
--   
-
 ## General Goal
 
 The TDM outputs results at a TAZ level. However, for equity analyses, we need to allocated census demographics to those TAZs--the model does not output results based on minority status, income status, or any other status that might be interesting for an equity analysis.
@@ -32,7 +16,7 @@ Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate
 
 **Problems:**
 
--   TAZs are mostly made up of blocks, but they're not exactly made up of blocks.
+-   TAZs are mostly made up of census blocks, but they're not exactly made up of blocks.
 -   There are small tweaks to the TAZ geometry throughout the model region that mean lines do not overlap exactly.
 -   Census blocks are NOT necessarily the best starting point because the differential privacy features of the 2020 census have rendered them unreliable.
 -   TAZs may be smaller than a census geometry.
@@ -52,18 +36,22 @@ Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate
 When joining 2010 census blocks to TAZs, Paul Reim performed a series of intersections to identify where blocks were split. Where a TAZ split a block, he counted rooftops and used StreetView to estimate how many rooftops were in each TAZ. It is not desirable to maintain such a process--the reproducibility is limited and its highly manual. We can replicate the methodology using the rooftops layer. There are other solutions available as well:
 
 1.  Rooftops
-    i.  Allocate based on where the largest piece of the rooftop is
+    i.  Allocate based on where the largest piece of the rooftop is (chosen)
     ii. Where the centroid of the roof is
     iii. Allocate proportionally based on the rooftop area.
 2.  Land Area
 3.  Total Area
-4.  Dasymetric Mapping
+4.  Dasymetric Mapping (not completed yet)
 
 ### Useful references
 
 -   massgis census: <https://www.mass.gov/info-details/massgis-data-2020-us-census>
 
 -   MassDOT rooftops: <https://www.mass.gov/info-details/massgis-data-building-structures-2-d>
+
+-   Microsoft Rooftops: <https://github.com/Microsoft/USBuildingFootprints>
+
+-   Dasymetric Mapping: <https://www.nature.com/articles/s41597-022-01603-z>
 
 ## Set up Packages
 
@@ -76,6 +64,7 @@ library(tigris)
 library(mapview)
 library(sf)
 library(units)
+library(rgeos)
 ```
 
 ## Load Census, TAZ, and Rooftop Shapes
@@ -112,69 +101,106 @@ block_groups_nocoast <-
 block_groups <- block_groups_nocoast
 rm(block_groups_nocoast)
 
+block_groups <- block_groups |> 
+  group_by(GEOID, ALAND, AWATER) |> 
+  summarize()
+
 #massgis rooftops: https://www.mass.gov/info-details/massgis-data-building-structures-2-d
 # Download the file into "./data/base/" and then read it in here. Save it as a .rds for easy loading. Optionally, we could 
 # rooftops <- st_read("data/base/STRUCTURES_POLY.shp")
 # 
 # saveRDS(rooftops, "data/processed/rooftops.rds")
-
-
-# Load Population Census Data
-# downloaded from: https://data.census.gov/table?t=Race+and+Ethnicity&g=0400000US25$1500000&tid=DECENNIALPL2020.P1
-# minority <- read_csv("data/base/DECENNIALPL2020.P1-Data.csv")
-
 ```
 
-### Filter for Plymouth County
+### Filter For MPO Region
 
-We start by filtering out for just Plymouth County to keep the problem small while we work through the process.
+We would like to grab the TAZs in the MPO and CBG that touch or may contribute area to those TAZs. We slightly buffer the TAZs to capture CBGs that might share a roof in a TAZ but may not be captured in a simple `st_contains` join--though `st_within` could work.
 
 ```{r}
-# ply = Plymouth.
-TAZ_ply <- TAZ %>% 
-  filter(COUNTY == "Plymouth MA")
 
-# 023 = Plymouth
-# See: tidycensus::fips_codes |> filter(state == "MA", county_code == "023")
-blk_group_ply <- block_groups %>% 
-  filter(COUNTYFP == "023") %>% 
-  group_by(GEOID) %>% 
-  summarize()
+# MPO region TAZ
+TAZ_MPO <- TAZ %>% 
+  filter(RPA == "MAPC")
 
-rm(TAZ, block_groups)
+# MPO region + buffer
+TAZ_buffer <- TAZ_MPO %>% 
+  st_union() %>% 
+  st_buffer(dist = 1000)
+
+# Pull all the TAZs within a 100m buffer of MPO TAZs.
+# MPO region + buffer TAZ
+TAZ_MPO_buffer <- TAZ[TAZ_buffer,]
+
+# MPO region BG. These are all the block groups touching the MPOs in the TAZ.
+blk_group_MPO <- block_groups[TAZ_MPO,]
+
+# MPO region + buffer BG
+blk_group_MPO_buffer <- block_groups[TAZ_buffer,]
+
+# Display for exploration of results. Red CBGs are those that 
+# are added due to the slight buffer.
+# mapview(blk_group_MPO) +  
+#   mapview(blk_group_MPO_buffer, col.regions = "red") +  
+#   mapview(TAZ_MPO |> st_union(), alpha.regions = 0.01, lwd = 3) +
+#   mapview(TAZ_MPO_buffer) + 
+#   mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
 ```
 
 ## Calculate Intersecting Areas
 
-### Find Area of census block groups
+### Find Area of Census Block Groups
 
 We find the area of the census block groups. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
 
 ```{r}
-blk_group_ply$BG_TOTAL_AREA <- (st_area(blk_group_ply) ) 
+blk_group_MPO_buffer$BG_TOTAL_AREA <- (st_area(blk_group_MPO_buffer) ) 
 ```
 
-### Intersect census block groups with TAZ
+### Intersect Census Block Groups with TAZ
 
 ```{r}
-
-intersections <- st_intersection(TAZ_ply, blk_group_ply) %>%
+intersections <- st_intersection(TAZ_MPO_buffer, blk_group_MPO_buffer) %>%
   st_collection_extract("POLYGON") %>% 
   rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
 
 intersections$INTERSECTION_TOTAL_AREA <- st_area(intersections)
+
+saveRDS(intersections, "./data/processed/intersect.rds")
+#intersections <- read_rds("./data/processed/intersect.rds")
 ```
 
 We now have the full area of the CBGs and the area of the intersections.
 
 ### Erase Water From Intersections
 
-We can now remove the water from the intersections. By doing this now, we only remove the water area once.
+We can now remove the water from the intersections. By doing this now, we only remove the water area once. We set the limit at the top 50% of water areas.
+
+```{r}
+water <-
+  area_water(
+    state = "MA",
+    year = 2020,
+    county = fips_codes |> filter(state == "MA") |> select(county_code) |> pull()
+  ) |> st_drop_geometry()
+
+water2 <- water |> arrange(desc(AWATER)) |> 
+  mutate(share_of_area = cumsum(AWATER)/sum(AWATER),
+         ntile = row_number()/n())
+
+ggplot(water2, aes(x= ntile, y = share_of_area)) + 
+  geom_point() +
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(labels = scales::percent_format())
+```
 
 ```{r}
 intersections_land <- tigris::erase_water(intersections, 
-                                area_threshold = 0.5, 
+                                area_threshold = 0.50, 
                                 year = 2020)
+
+saveRDS(intersections_land, "./data/processed/intersections_land.rds")
+#intersections_land <- read_rds("./data/processed/intersections_land.rds")
+
 ```
 
 ### Recalculate Land Area for the Intersections
@@ -235,40 +261,42 @@ area_allocation <- area_allocation |>
   summarize(BG_LA_pct = sum(BG_LA_pct, na.rm = TRUE),
             BG_FA_pct = sum(BG_FA_pct, na.rm = TRUE))
 
-write_csv(area_allocation, "./output/data/area_allocation_plymouth.csv")
+write_csv(area_allocation, "./output/data/area_allocation_BosMPO.csv")
 ```
 
 #### Check Results
 
-We want to verify that we have maintained area. We want 100% of the area accounted for.
+We want to verify that we have maintained area. We want 100% of the area accounted for. This may be not as true now that we've included extra buffer area. We may want 100% of the area included for the TAZs inside the MPO boundary.
 
 ```{r}
-area_allocation |> group_by(GEOID) |> 
+flag <- area_allocation |> 
+  group_by(GEOID) |> 
   summarize(tot_LA_in_CBG = sum(BG_LA_pct, na.rm = TRUE),
             tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE)) |>
   ungroup() |> 
   filter(tot_FA_in_CBG < 0.999 | tot_LA_in_CBG < 0.999)
 ```
 
-Land area is good. All of the CBG area is accounted for. For the full area method there are some small areas where the TAZ geometry and the CBG geometry does not exactly line up. This appears to be the cause of some small discrepancies in the "full area" method. They appear to be very small \<1%. In the Plymouth county example, some islands off the coast of Hull appear to be missing. These islands are in \`TAZ\$ID == 399\` outside Plymouth County.
+There are two land_area values that are equal to `0`, rather than `1`. These are: 250099901000 and 250259901010. Neither of these have any land area at all--they are water-only CBGs. At a glance, the remaining appear to be associated with the border or otherwise excluding some piece of geometry outside the MPO.
 
 ##### Explore Areas
 
 ```{r}
-
 example <- intersections %>% 
-  filter(GEOID == 250235001032)
+  filter(GEOID %in% flag$GEOID)
+  # filter(GEOID == "250277612002")
 
-mapview(TAZ_ply |> 
+mapview(TAZ_MPO_buffer |> 
           filter(ID %in% example$ID), 
         col.regions = "red", 
         layer.name = "TAZ") + 
-  mapview(blk_group_ply |> 
+  mapview(blk_group_MPO_buffer |> 
             filter(GEOID %in% example$GEOID),
           alpha.regions = 0.01, lwd = 3,
           layer.name = "CBG") + 
   mapview(example, zcol = "Intersection_ID",
-          layer.name = "Intersection")
+          layer.name = "Intersection") + 
+  mapview(TAZ_MPO |> st_union())
 ```
 
 ### Allocate based on rooftops
@@ -333,7 +361,7 @@ rm(rooftops, unique_roof, repeat_roof)
 # NA struct IDs seem to be random
 ```
 
-#### Find which CBG and which TAZ each rooftop is most in
+#### Find which CBG and which TAZ each rooftop is most in.
 
 1.  Intersect with CBGs
 2.  Intersect with TAZs.
@@ -342,7 +370,7 @@ rm(rooftops, unique_roof, repeat_roof)
 tictoc::tic()
 roof_cbg <- st_join(
   rooftops_clean,
-  blk_group_ply |> select(GEOID),
+  blk_group_MPO_buffer |> select(GEOID),
   left = FALSE,
   largest = TRUE
 ) |> st_drop_geometry()
@@ -351,30 +379,36 @@ tictoc::toc()
 tictoc::tic()
 roof_taz <- st_join(
   rooftops_clean,
-  TAZ_ply |> select(ID),
+  TAZ_MPO_buffer |> select(ID, RPA),
   left = FALSE,
   largest = TRUE
 )|> st_drop_geometry()
 tictoc::toc()
 
-# Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
+# get rid of rooftops that are mostly not in the MPO taz or bgs
+roof_cbg_MPO <- roof_cbg %>% 
+  filter(GEOID %in% blk_group_MPO$GEOID)
 
-roof_shares <- rooftops_clean |> 
+roof_taz_MPO <- roof_taz %>% 
+  filter(RPA == "MAPC")
+
+# Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
+roof_shares_MPO <- rooftops_clean |> 
   st_drop_geometry() |> 
   filter(STRUCT_ID %in% roof_cbg$STRUCT_ID) |> 
-  left_join(roof_cbg, by = "STRUCT_ID") |> 
-  left_join(roof_taz, by = "STRUCT_ID")
+  left_join(roof_cbg_MPO, by = "STRUCT_ID") |> 
+  left_join(roof_taz_MPO, by = "STRUCT_ID")
 
-saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
-saveRDS(roof_taz, "./data/processed/roof_taz.rds")
-saveRDS(roof_shares, "./data/processed/roof_shares.rds")
+saveRDS(roof_cbg_MPO, "./data/processed/roof_cbg_MPO.rds")
+saveRDS(roof_taz_MPO, "./data/processed/roof_taz_MPO.rds")
+saveRDS(roof_shares_MPO, "./data/processed/roof_shares_MPO.rds")
 
 #roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
 #roof_taz <- readRDS("./data/processed/roof_taz.rds")
 #roof_shares <- readRDS("./data/processed/roof_shares.rds")
 
 tictoc::tic()
-roof_shares_ratio <- roof_shares |> 
+roof_shares_ratio <- roof_shares_MPO |> 
   st_drop_geometry() |> 
   group_by(GEOID,ID) |> 
   summarize(tot_roofs = n()) |> 
@@ -382,149 +416,8 @@ roof_shares_ratio <- roof_shares |>
   mutate(BG_RT_pct = tot_roofs/sum(tot_roofs))
 tictoc::toc()
 
-write_csv(roof_shares_ratio, file = "./output/data/rooftop_allocation_plymouth_largest_in_each.csv")
+write_csv(roof_shares_ratio, file = "./output/data/rooftop_allocation_MPO_largest_in_each.csv")
 
-```
-
-```{r}
-
-roof_share_filter <- roof_cbg |> 
-  filter(GEOID == 250235001011)
-
-example <- rooftops_clean |> 
-  filter(STRUCT_ID %in% roof_share_filter$STRUCT_ID) |> 
-  left_join(roof_cbg, by = "STRUCT_ID") |> 
-  left_join(roof_taz, by = "STRUCT_ID")
-
-mapview(TAZ_ply |> 
-          filter(ID %in% example$ID), 
-        col.regions = "red", 
-        layer.name = "TAZ") + 
-  mapview(blk_group_ply |> 
-            filter(GEOID %in% example$GEOID),
-          alpha.regions = 0.01, lwd = 3,
-          layer.name = "CBG") + 
-  mapview(example, zcol = "STRUCT_ID",
-          layer.name = "Roof")
-```
-
-#### Intersection Area Approach
-
-We now find which rooftops are in which intersection area.
-
-```{r}
-#intersecting the rooftops with the census block groups
-#roofs_in_bg <- st_intersection(blk_groups_land, rooftops)
-
-# finding the number of rooftops in each census block group
-# num_rooftops <- roofs_in_bg %>% 
-#   group_by(GEOID) %>% 
-#   mutate(num_roof = n()) %>%  
-#   distinct(GEOID, num_roof)
-# saveRDS(roofs_in_bg, "data/processed/rooftops_in_bg.rds")
-# saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
-
-
-intersections_land <- intersections_land %>% 
-  select(Intersection_ID, ID, GEOID, BG_TOTAL_AREA, INTERSECTION_TOTAL_AREA, INTERSECTION_LAND_AREA, BG_LAND_AREA)
-
-# Joining the intersection areas with the rooftops that reside inside of them.
-# 
-# See this thread for the basic idea. The default join for 
-# st_join is st_intersects, this is basically intersect the two and choose pull the info of the largest intersection area into the rooftop dataset.
-# https://github.com/r-spatial/sf/issues/578
-
-
-# NOTE: have to rethink the join to account for total bg area as opposed to the largest intersection area (see Jamboard)
-# https://jamboard.google.com/d/1L5YrUrmOUpmQp8X6w2gaz51Fz6We8b0uV-Hm5g4aU2E/viewer?ts=63d15e99&f=1
-# This took a very long time
-roofs_in_intersect <- st_join(
-  rooftops_clean,  
-  intersections_land,
-  left= FALSE, # inner join
-  largest = TRUE)
-
-# Here's an example of what this is doing.
-roofs_in_intersect_filt <- roofs_in_intersect |> 
-  filter(ID %in% c(2708, 2709)) |> 
-  mutate(Intersection_ID = as.character(Intersection_ID))
-
-mapview(roofs_in_intersect_filt, zcol = "Intersection_ID") +
-  mapview(intersections |> 
-            filter(ID %in% roofs_in_intersect_filt$ID), 
-          alpha.region = 0.01, layer.name = "Intersection")
-
-num_rooftops <- roofs_in_intersect %>% 
-  st_drop_geometry() %>% 
-  group_by(Intersection_ID) %>% 
-  mutate(num_roof = n()) %>% 
-  distinct(Intersection_ID, ID, GEOID, BG_TOTAL_AREA, BG_LAND_AREA, INTERSECTION_TOTAL_AREA, INTERSECTION_LAND_AREA, num_roof)
-
-saveRDS(roofs_in_intersect, "data/processed/rooftops_in_intersect.rds")
-saveRDS(num_rooftops, "data/processed/num_rooftops_intersect.rds")
-```
-
-Looking to see how many rooftops are in multiple intersections
-
-```{r}
-roofs_in_intersect2 <- st_join(
-  rooftops_clean,  
-  intersections_land,
-  left= FALSE) %>% 
-  group_by(STRUCT_ID) %>% 
-  mutate(num_intersections = n()) 
-
-roofs_in_intersect2 <- roofs_in_intersect2 %>% 
-  distinct(STRUCT_ID, num_intersections) %>% 
-  filter(num_intersections > 1)
-
-# 4 intersections: 6 rooftops
-# 3 intersections: 133 rooftops
-# 2 intersections: 90 rooftops
-# Percent of rootops (240492) that are in 3+ intersections: 0.058%
-  
-```
-
-#### Determine the percentage of population that belongs to each intersection in the TAZ based on the number of rooftops
-
-```{r}
-# Pull in the rooftops that were calculated in the last step.
-roofs_in_intersect <- read_rds("./data/processed/rooftops_in_intersect.rds")
-
-num_rooftops <-  read_rds("data/processed/num_rooftops_intersect.rds")
-
-# Calculate the share of the GEOID in each TAZ.
-rooftop_share <- num_rooftops |> 
-  group_by(GEOID) |>  
-  mutate(rooftop_pct = num_roof/sum(num_roof))
-
-write_csv(rooftop_share, "./output/data/rooftop_share_plymouth.csv")
-```
-
-```{r}
-# Get population for block groups
-census_pop <- minority_tidy %>% 
-  select(c(GEOID, summary_value)) %>% 
-  rename(population_BG = summary_value)
-
-census_pop$GEOID <-str_remove_all(census_pop$GEOID, "1500000US")
-
-pop_percent <- rooftop_share %>% 
-  left_join(census_pop) %>% 
-  # per BG: get population in each intersecting TAZ
-  mutate(population_intersection = rooftop_pct * as.numeric(population_BG)) %>% 
-  group_by(ID) %>% 
-  # per TAZ: add up the population in each intersecting BG
-  mutate(population_TAZ_roof = sum(population_intersection)) %>% 
-  ungroup()
-
-TAZ_pop_rooftops <- pop_percent %>% 
-  distinct(ID, population_TAZ_roof)
-
-TAZ_plot <- TAZ_ply %>% 
-  left_join(TAZ_pop_rooftops)
-
-mapview(TAZ_plot, zcol = "population_TAZ_roof")
 ```
 
 ## Review Population Effects
@@ -603,8 +496,8 @@ hist(diff$pct_diff, 80)
 
 ```{r}
 # Join the area and roof-based methods here.
-area <- read_csv("./output/data/area_allocation_plymouth.csv")
-roof <- read_csv("./output/data/rooftop_allocation_plymouth_largest_in_each.csv") |> select(-tot_roofs)
+area <- read_csv("./output/data/area_allocation_BosMPO.csv")
+roof <- read_csv("./output/data/rooftop_allocation_MPO_largest_in_each.csv") |> select(-tot_roofs)
 
 # Put each of the three methodologies together into a single table. # We can use this table as the basis for our comparisons and tests.
 allocation_results <- full_join(area, roof)
@@ -624,9 +517,13 @@ minority_tidy <- tidycensus::get_decennial(
 
 # Join the population to the CBGs.
 TAZ_results <- allocation_results |> 
-  left_join(minority_tidy) %>% 
-  mutate(BG_LA_min = BG_LA_pct * min_pop, BG_FA_min = BG_FA_pct* min_pop, BG_RT_min = BG_RT_pct * min_pop) %>% 
-  mutate(BG_LA_tot = BG_LA_pct * tot_pop, BG_FA_tot = BG_FA_pct* tot_pop, BG_RT_tot = BG_RT_pct * tot_pop) %>% 
+  left_join(minority_tidy, by = "GEOID") %>% 
+  mutate(BG_LA_min = BG_LA_pct * min_pop, 
+         BG_FA_min = BG_FA_pct* min_pop, 
+         BG_RT_min = BG_RT_pct * min_pop) %>% 
+  mutate(BG_LA_tot = BG_LA_pct * tot_pop, 
+         BG_FA_tot = BG_FA_pct* tot_pop, 
+         BG_RT_tot = BG_RT_pct * tot_pop) %>% 
   group_by(ID) %>% 
   summarize(LA_min = sum(BG_LA_min, na.rm=TRUE),
             FA_min = sum(BG_FA_min, na.rm=TRUE),
@@ -635,8 +532,6 @@ TAZ_results <- allocation_results |>
             FA_tot = sum(BG_FA_tot, na.rm=TRUE),
             RT_tot = sum(BG_RT_tot, na.rm=TRUE))
   
-
-
 ```
 
 ### Testing
@@ -653,13 +548,15 @@ allocation_results |> group_by(GEOID) |>
   ungroup() |> 
   filter(tot_FA_in_CBG < 0.999 | 
            tot_LA_in_CBG < 0.999 |
-           tot_RT_in_CBG < 0.999)
+           tot_RT_in_CBG < 0.999) |> 
+  View()
 ```
 
 ### Compare Population Estimates
 
 ```{r}
-
+#| warning: false
+#| message: false
 library(GGally)
 
 min_results <- TAZ_results %>% 
@@ -680,14 +577,35 @@ ggpairs(percentages, title="Correlogram For Percent Minority")
 
 ```
 
-### Test minority share
+## Map Comparison
 
-```{r}
+## Trailing Thoughts
 
-```
+### Thoughts:
 
-Thoughts:
+Some TAZs are smaller than census block groups. Do we need to adjust the method of analysis for those cases? It could be the same. Since we are looking for the percentage of the block group that is within the TAZ, then it wouldn't matter if it is smaller or larger. In this case, it just wouldn't also be sharing area with other block groups.
 
--   some TAZs are smaller than blockgroups. Do we need to adjust the method of analysis for those cases? It could be the same. Since we are looking for the percentage of the block group that is within the TAZ, then it wouldn't matter if it is smaller or larger. In this case, it just wouldn't also be sharing area with other block groups.
+![](images/image-779890944.png)
 
-    ![](images/image-779890944.png)
+### Extensions
+
+We still can explore the dasymetric method of assigning population to blocks. This method allocates people among areas that are livable--reasonable slopes, not roads.
+
+We can also switch to a new rooftop data source that contains rooftops for NH, RI, and MA: [Microsoft: USBuildingFootprints](https://github.com/Microsoft/USBuildingFootprints).
+
+Maps
+
+Quick presentation
+
+Lean on graphics
+
+Questions:
+
+Preferences?
+
+Next steps:\
+Dasymetric
+
+Tracts vs bg
+
+if we want to go more, need to switch rooftop datasets
