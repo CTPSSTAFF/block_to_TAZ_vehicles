@@ -260,7 +260,8 @@ area_allocation <- intersections_for_alloc |>
 area_allocation <- area_allocation |> 
   group_by(GEOID, ID) |> 
   summarize(BG_LA_pct = sum(BG_LA_pct, na.rm = TRUE),
-            BG_FA_pct = sum(BG_FA_pct, na.rm = TRUE))
+            BG_FA_pct = sum(BG_FA_pct, na.rm = TRUE)) |> 
+  filter(ID %in% TAZ_MPO$ID)
 
 write_csv(area_allocation, "./output/data/area_allocation_BosMPO.csv")
 ```
