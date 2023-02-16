@@ -139,11 +139,12 @@ blk_group_MPO_buffer <- block_groups[TAZ_buffer,]
 
 # Display for exploration of results. Red CBGs are those that 
 # are added due to the slight buffer.
-# mapview(blk_group_MPO) +  
-#   mapview(blk_group_MPO_buffer, col.regions = "red") +  
-#   mapview(TAZ_MPO |> st_union(), alpha.regions = 0.01, lwd = 3) +
-#   mapview(TAZ_MPO_buffer) + 
-#   mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
+# mapview(blk_group_MPO) +
+#   # mapview(blk_group_MPO_buffer, col.regions = "red") +
+#   mapview(TAZ_MPO, alpha.regions = 0.01, lwd = 3) +
+#   mapview(TAZ_MPO_buffer, alpha.regions = 0.01, lwd = 3) +
+#   mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3, col.regions = "pink") +
+#   mapview(blk_group_MPO_buffer |> filter(GEOID == "250056002032"), col.region = "gold")
 ```
 
 ## Calculate Intersecting Areas
@@ -434,7 +435,8 @@ area <- read_csv("./output/data/area_allocation_BosMPO.csv")
 roof <- read_csv("./output/data/rooftop_allocation_MPO_largest_in_each.csv") |> select(-tot_roofs)
 
 # Put each of the three methodologies together into a single table. # We can use this table as the basis for our comparisons and tests.
-allocation_results <- full_join(area, roof, by = c("GEOID", "ID"))
+allocation_results <- full_join(area, roof, by = c("GEOID", "ID")) |> 
+  filter(ID %in% TAZ_MPO$ID)
 
 # Import the census block group info for MA. 
 
