@@ -113,6 +113,10 @@ block_groups_nocoast <-
 block_groups <- block_groups_nocoast
 rm(block_groups_nocoast)
 
+block_groups <- block_groups |> 
+  group_by(GEOID, ALAND, AWATER) |> 
+  summarize()
+
 #massgis rooftops: https://www.mass.gov/info-details/massgis-data-building-structures-2-d
 # Download the file into "./data/base/" and then read it in here. Save it as a .rds for easy loading. Optionally, we could 
 # rooftops <- st_read("data/base/STRUCTURES_POLY.shp")
@@ -125,18 +129,18 @@ rm(block_groups_nocoast)
 We start by filtering out for just Plymouth County to keep the problem small while we work through the process.
 
 ```{r}
-# ply = Plymouth.
-TAZ_ply <- TAZ %>% 
-  filter(COUNTY == "Plymouth MA")
+# # ply = Plymouth.
+# TAZ_ply <- TAZ %>% 
+#   filter(COUNTY == "Plymouth MA")
+# 
+# # 023 = Plymouth
+# # See: tidycensus::fips_codes |> filter(state == "MA", county_code == "023")
+# blk_group_ply <- block_groups %>% 
+#   filter(COUNTYFP == "023") %>% 
+#   group_by(GEOID) %>% 
+#   summarize()
 
-# 023 = Plymouth
-# See: tidycensus::fips_codes |> filter(state == "MA", county_code == "023")
-blk_group_ply <- block_groups %>% 
-  filter(COUNTYFP == "023") %>% 
-  group_by(GEOID) %>% 
-  summarize()
-
-rm(TAZ, block_groups)
+# rm(TAZ, block_groups)
 ```
 
 ### Filter For MPO Region
@@ -152,29 +156,25 @@ TAZ_MPO <- TAZ %>%
 # MPO region + buffer
 TAZ_buffer <- TAZ_MPO %>% 
   st_union() %>% 
-  st_buffer(dist = 100)
+  st_buffer(dist = 1000)
 
 # Pull all the TAZs within a 100m buffer of MPO TAZs.
 # MPO region + buffer TAZ
 TAZ_MPO_buffer <- TAZ[TAZ_buffer,]
 
-# mapview(TAZ_MPO_buffer) + mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
-
 # MPO region BG. These are all the block groups touching the MPOs in the TAZ.
 blk_group_MPO <- block_groups[TAZ_MPO,]
 
 # MPO region + buffer BG
-blk_group_MPO_buffer <- block_groups[TAZ_buffer,] #%>% 
-#   filter(COUNTYFP == "023") %>% 
-#   group_by(GEOID) %>% 
-#   summarize()
+blk_group_MPO_buffer <- block_groups[TAZ_buffer,]
 
-mapview(blk_group_MPO) +  
-  mapview(blk_group_MPO_buffer, col.regions = "red") +  
-
-  mapview(TAZ_MPO |> st_union(), alpha.regions = 0.01, lwd = 3) +
-  mapview(TAZ_MPO_buffer) + 
-  mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
+# Display for exploration of results. Red CBGs are those that 
+# are added due to the slight buffer.
+# mapview(blk_group_MPO) +  
+#   mapview(blk_group_MPO_buffer, col.regions = "red") +  
+#   mapview(TAZ_MPO |> st_union(), alpha.regions = 0.01, lwd = 3) +
+#   mapview(TAZ_MPO_buffer) + 
+#   mapview(TAZ_buffer, alpha.regions = 0.01, lwd = 3)
 ```
 
 ## Calculate Intersecting Areas
@@ -184,17 +184,20 @@ mapview(blk_group_MPO) +
 We find the area of the census block groups. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
 
 ```{r}
-blk_group_ply$BG_TOTAL_AREA <- (st_area(blk_group_ply) ) 
+blk_group_MPO_buffer$BG_TOTAL_AREA <- (st_area(blk_group_MPO_buffer) ) 
 ```
 
 ### Intersect census block groups with TAZ
 
 ```{r}
-intersections <- st_intersection(TAZ_ply, blk_group_ply) %>%
+intersections <- st_intersection(TAZ_MPO_buffer, blk_group_MPO_buffer) %>%
   st_collection_extract("POLYGON") %>% 
   rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
 
 intersections$INTERSECTION_TOTAL_AREA <- st_area(intersections)
+
+saveRDS(intersections, "./data/processed/intersect.rds")
+#intersections <- read_rds("./data/processed/intersect.rds")
 ```
 
 We now have the full area of the CBGs and the area of the intersections.
@@ -205,8 +208,12 @@ We can now remove the water from the intersections. By doing this now, we only r
 
 ```{r}
 intersections_land <- tigris::erase_water(intersections, 
-                                area_threshold = 0.5, 
+                                area_threshold = 0.50, 
                                 year = 2020)
+
+saveRDS(intersections_land, "./data/processed/intersections_land.rds")
+#intersections_land <- read_rds("./data/processed/intersections_land.rds")
+
 ```
 
 ### Recalculate Land Area for the Intersections
@@ -267,40 +274,42 @@ area_allocation <- area_allocation |>
   summarize(BG_LA_pct = sum(BG_LA_pct, na.rm = TRUE),
             BG_FA_pct = sum(BG_FA_pct, na.rm = TRUE))
 
-write_csv(area_allocation, "./output/data/area_allocation_plymouth.csv")
+write_csv(area_allocation, "./output/data/area_allocation_BosMPO.csv")
 ```
 
 #### Check Results
 
-We want to verify that we have maintained area. We want 100% of the area accounted for.
+We want to verify that we have maintained area. We want 100% of the area accounted for. This may be not as true now that we've included extra buffer area. We may want 100% of the area included for the TAZs inside the MPO boundary.
 
 ```{r}
-area_allocation |> group_by(GEOID) |> 
+flag <- area_allocation |> 
+  group_by(GEOID) |> 
   summarize(tot_LA_in_CBG = sum(BG_LA_pct, na.rm = TRUE),
             tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE)) |>
   ungroup() |> 
   filter(tot_FA_in_CBG < 0.999 | tot_LA_in_CBG < 0.999)
 ```
 
-Land area is good. All of the CBG area is accounted for. For the full area method there are some small areas where the TAZ geometry and the CBG geometry does not exactly line up. This appears to be the cause of some small discrepancies in the "full area" method. They appear to be very small \<1%. In the Plymouth county example, some islands off the coast of Hull appear to be missing. These islands are in \`TAZ\$ID == 399\` outside Plymouth County.
+There are two land_area values that are equal to `0`, rather than `1`. These are: 250099901000 and 250259901010. Neither of these have any land area at all--they are water-only CBGs. At a glance, the remaining appear to be associated with the border or otherwise excluding some piece of geometry outside the MPO.
 
 ##### Explore Areas
 
 ```{r}
-
 example <- intersections %>% 
-  filter(GEOID == 250235001032)
+  filter(GEOID %in% flag$GEOID)
+  # filter(GEOID == "250277612002")
 
-mapview(TAZ_ply |> 
+mapview(TAZ_MPO_buffer |> 
           filter(ID %in% example$ID), 
         col.regions = "red", 
         layer.name = "TAZ") + 
-  mapview(blk_group_ply |> 
+  mapview(blk_group_MPO_buffer |> 
             filter(GEOID %in% example$GEOID),
           alpha.regions = 0.01, lwd = 3,
           layer.name = "CBG") + 
   mapview(example, zcol = "Intersection_ID",
-          layer.name = "Intersection")
+          layer.name = "Intersection") + 
+  mapview(TAZ_MPO |> st_union())
 ```
 
 ### Allocate based on rooftops
@@ -396,7 +405,6 @@ roof_cbg_MPO <- roof_cbg %>%
 
 roof_taz_MPO <- roof_taz %>% 
   filter(RPA == "MAPC")
-
 
 # Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
 roof_shares_MPO <- rooftops_clean |> 
@@ -643,8 +651,8 @@ hist(diff$pct_diff, 80)
 
 ```{r}
 # Join the area and roof-based methods here.
-area <- read_csv("./output/data/area_allocation_plymouth.csv")
-roof <- read_csv("./output/data/rooftop_allocation_plymouth_largest_in_each.csv") |> select(-tot_roofs)
+area <- read_csv("./output/data/area_allocation_BosMPO.csv")
+roof <- read_csv("./output/data/rooftop_allocation_MPO_largest_in_each.csv") |> select(-tot_roofs)
 
 # Put each of the three methodologies together into a single table. # We can use this table as the basis for our comparisons and tests.
 allocation_results <- full_join(area, roof)
@@ -695,7 +703,8 @@ allocation_results |> group_by(GEOID) |>
   ungroup() |> 
   filter(tot_FA_in_CBG < 0.999 | 
            tot_LA_in_CBG < 0.999 |
-           tot_RT_in_CBG < 0.999)
+           tot_RT_in_CBG < 0.999) |> 
+  View()
 ```
 
 ### Compare Population Estimates
@@ -719,12 +728,6 @@ percentages <- TAZ_results %>%
 ggpairs(min_results, title="Correlogram For Minority Pop") 
 ggpairs(tot_results, title="Correlogram For Total Pop")
 ggpairs(percentages, title="Correlogram For Percent Minority")
-
-```
-
-### Test minority share
-
-```{r}
 
 ```
 
