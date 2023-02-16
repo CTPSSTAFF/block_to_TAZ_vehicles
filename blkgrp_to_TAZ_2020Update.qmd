@@ -592,3 +592,20 @@ Some TAZs are smaller than census block groups. Do we need to adjust the method 
 We still can explore the dasymetric method of assigning population to blocks. This method allocates people among areas that are livable--reasonable slopes, not roads.
 
 We can also switch to a new rooftop data source that contains rooftops for NH, RI, and MA: [Microsoft: USBuildingFootprints](https://github.com/Microsoft/USBuildingFootprints).
+
+Maps
+
+Quick presentation
+
+Lean on graphics
+
+Questions:
+
+Preferences?
+
+Next steps:\
+Dasymetric
+
+Tracts vs bg
+
+if we want to go more, need to switch rooftop datasets
