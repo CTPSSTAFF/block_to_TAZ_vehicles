@@ -8,22 +8,6 @@ format:
 editor: visual
 ---
 
-**TODO**:
-
--   Remove duplicate rooftops: \`rooftops \|\> st_drop_geometry() \|\> group_by(STRUCT_ID) \|\> tally() \|\> filter(n\>1) \|\> View()\` Example: STRUCT_ID == "250858_862528". There are also STRUCT_IDs with values of "NA" that we should explore. Are they duplicate? Are they just unlabeled?
--   Remove vestigial commented out code. It's going to be confusing.
--   Export only the allocation table: GEOID, TAZ, share_of_geoid_to_TAZ_method1 (then repeat for methods 2 and 3). Once you're happy you can join them together to compare. In the end, we'll keep one method. We also want to be able to attach the dasymetric method later too.
--   Check the all area calc to see if the coast line is included. We really dont need that no matter what. It may just be a not great method and we dont worry much about it.
--   Check the number of CBG to TAZ relationships that exist. They ought to be the same(?) if we include 0% shares, which might not appear in a table.
--   Look at building footprints dataset for whole country by Microsoft- Emily
-
-Notes:
-
--   You don't have to wrap select() arguments in c().
--   Using tidycensus gives you a cleaner table to start with rather than grabbing a flat file from the census and storing in in a folder. The end result should be the same.
--   You could do all the land area/rooftop/water area joins in one steps if you calc it at the start then keep track of it all. alternatively we can just keep this as is, then create a fresh notebook with the chosen solution.
--   
-
 ## General Goal
 
 The TDM outputs results at a TAZ level. However, for equity analyses, we need to allocated census demographics to those TAZs--the model does not output results based on minority status, income status, or any other status that might be interesting for an equity analysis.
@@ -32,7 +16,7 @@ Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate
 
 **Problems:**
 
--   TAZs are mostly made up of blocks, but they're not exactly made up of blocks.
+-   TAZs are mostly made up of census blocks, but they're not exactly made up of blocks.
 -   There are small tweaks to the TAZ geometry throughout the model region that mean lines do not overlap exactly.
 -   Census blocks are NOT necessarily the best starting point because the differential privacy features of the 2020 census have rendered them unreliable.
 -   TAZs may be smaller than a census geometry.
@@ -52,18 +36,22 @@ Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate
 When joining 2010 census blocks to TAZs, Paul Reim performed a series of intersections to identify where blocks were split. Where a TAZ split a block, he counted rooftops and used StreetView to estimate how many rooftops were in each TAZ. It is not desirable to maintain such a process--the reproducibility is limited and its highly manual. We can replicate the methodology using the rooftops layer. There are other solutions available as well:
 
 1.  Rooftops
-    i.  Allocate based on where the largest piece of the rooftop is
+    i.  Allocate based on where the largest piece of the rooftop is (chosen)
     ii. Where the centroid of the roof is
     iii. Allocate proportionally based on the rooftop area.
 2.  Land Area
 3.  Total Area
-4.  Dasymetric Mapping
+4.  Dasymetric Mapping (not completed yet)
 
 ### Useful references
 
 -   massgis census: <https://www.mass.gov/info-details/massgis-data-2020-us-census>
 
 -   MassDOT rooftops: <https://www.mass.gov/info-details/massgis-data-building-structures-2-d>
+
+-   Microsoft Rooftops: <https://github.com/Microsoft/USBuildingFootprints>
+
+-   Dasymetric Mapping: <https://www.nature.com/articles/s41597-022-01603-z>
 
 ## Set up Packages
 
@@ -160,7 +148,7 @@ blk_group_MPO_buffer <- block_groups[TAZ_buffer,]
 
 ## Calculate Intersecting Areas
 
-### Find Area of census block groups
+### Find Area of Census Block Groups
 
 We find the area of the census block groups. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
 
@@ -168,7 +156,7 @@ We find the area of the census block groups. This area will not necessarily matc
 blk_group_MPO_buffer$BG_TOTAL_AREA <- (st_area(blk_group_MPO_buffer) ) 
 ```
 
-### Intersect census block groups with TAZ
+### Intersect Census Block Groups with TAZ
 
 ```{r}
 intersections <- st_intersection(TAZ_MPO_buffer, blk_group_MPO_buffer) %>%
@@ -185,7 +173,25 @@ We now have the full area of the CBGs and the area of the intersections.
 
 ### Erase Water From Intersections
 
-We can now remove the water from the intersections. By doing this now, we only remove the water area once.
+We can now remove the water from the intersections. By doing this now, we only remove the water area once. We set the limit at the top 50% of water areas.
+
+```{r}
+water <-
+  area_water(
+    state = "MA",
+    year = 2020,
+    county = fips_codes |> filter(state == "MA") |> select(county_code) |> pull()
+  ) |> st_drop_geometry()
+
+water2 <- water |> arrange(desc(AWATER)) |> 
+  mutate(share_of_area = cumsum(AWATER)/sum(AWATER),
+         ntile = row_number()/n())
+
+ggplot(water2, aes(x= ntile, y = share_of_area)) + 
+  geom_point() +
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(labels = scales::percent_format())
+```
 
 ```{r}
 intersections_land <- tigris::erase_water(intersections, 
@@ -549,7 +555,8 @@ allocation_results |> group_by(GEOID) |>
 ### Compare Population Estimates
 
 ```{r}
-
+#| warning: false
+#| message: false
 library(GGally)
 
 min_results <- TAZ_results %>% 
@@ -570,8 +577,18 @@ ggpairs(percentages, title="Correlogram For Percent Minority")
 
 ```
 
-Thoughts:
+## Map Comparison
 
--   some TAZs are smaller than blockgroups. Do we need to adjust the method of analysis for those cases? It could be the same. Since we are looking for the percentage of the block group that is within the TAZ, then it wouldn't matter if it is smaller or larger. In this case, it just wouldn't also be sharing area with other block groups.
+## Trailing Thoughts
 
-    ![](images/image-779890944.png)
+### Thoughts:
+
+Some TAZs are smaller than census block groups. Do we need to adjust the method of analysis for those cases? It could be the same. Since we are looking for the percentage of the block group that is within the TAZ, then it wouldn't matter if it is smaller or larger. In this case, it just wouldn't also be sharing area with other block groups.
+
+![](images/image-779890944.png)
+
+### Extensions
+
+We still can explore the dasymetric method of assigning population to blocks. This method allocates people among areas that are livable--reasonable slopes, not roads.
+
+We can also switch to a new rooftop data source that contains rooftops for NH, RI, and MA: [Microsoft: USBuildingFootprints](https://github.com/Microsoft/USBuildingFootprints).
