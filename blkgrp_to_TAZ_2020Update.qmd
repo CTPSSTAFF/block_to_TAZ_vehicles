@@ -124,25 +124,6 @@ block_groups <- block_groups |>
 # saveRDS(rooftops, "data/processed/rooftops.rds")
 ```
 
-### Filter for Plymouth County
-
-We start by filtering out for just Plymouth County to keep the problem small while we work through the process.
-
-```{r}
-# # ply = Plymouth.
-# TAZ_ply <- TAZ %>% 
-#   filter(COUNTY == "Plymouth MA")
-# 
-# # 023 = Plymouth
-# # See: tidycensus::fips_codes |> filter(state == "MA", county_code == "023")
-# blk_group_ply <- block_groups %>% 
-#   filter(COUNTYFP == "023") %>% 
-#   group_by(GEOID) %>% 
-#   summarize()
-
-# rm(TAZ, block_groups)
-```
-
 ### Filter For MPO Region
 
 We would like to grab the TAZs in the MPO and CBG that touch or may contribute area to those TAZs. We slightly buffer the TAZs to capture CBGs that might share a roof in a TAZ but may not be captured in a simple `st_contains` join--though `st_within` could work.
@@ -374,7 +355,7 @@ rm(rooftops, unique_roof, repeat_roof)
 # NA struct IDs seem to be random
 ```
 
-#### Find which CBG and which TAZ each rooftop is most in
+#### Find which CBG and which TAZ each rooftop is most in.
 
 1.  Intersect with CBGs
 2.  Intersect with TAZs.
@@ -397,7 +378,6 @@ roof_taz <- st_join(
   largest = TRUE
 )|> st_drop_geometry()
 tictoc::toc()
-
 
 # get rid of rooftops that are mostly not in the MPO taz or bgs
 roof_cbg_MPO <- roof_cbg %>% 
@@ -432,147 +412,6 @@ tictoc::toc()
 
 write_csv(roof_shares_ratio, file = "./output/data/rooftop_allocation_MPO_largest_in_each.csv")
 
-```
-
-```{r}
-
-roof_share_filter <- roof_cbg |> 
-  filter(GEOID == 250235001011)
-
-example <- rooftops_clean |> 
-  filter(STRUCT_ID %in% roof_share_filter$STRUCT_ID) |> 
-  left_join(roof_cbg, by = "STRUCT_ID") |> 
-  left_join(roof_taz, by = "STRUCT_ID")
-
-mapview(TAZ_ply |> 
-          filter(ID %in% example$ID), 
-        col.regions = "red", 
-        layer.name = "TAZ") + 
-  mapview(blk_group_ply |> 
-            filter(GEOID %in% example$GEOID),
-          alpha.regions = 0.01, lwd = 3,
-          layer.name = "CBG") + 
-  mapview(example, zcol = "STRUCT_ID",
-          layer.name = "Roof")
-```
-
-#### Intersection Area Approach
-
-We now find which rooftops are in which intersection area.
-
-```{r}
-#intersecting the rooftops with the census block groups
-#roofs_in_bg <- st_intersection(blk_groups_land, rooftops)
-
-# finding the number of rooftops in each census block group
-# num_rooftops <- roofs_in_bg %>% 
-#   group_by(GEOID) %>% 
-#   mutate(num_roof = n()) %>%  
-#   distinct(GEOID, num_roof)
-# saveRDS(roofs_in_bg, "data/processed/rooftops_in_bg.rds")
-# saveRDS(num_rooftops, "data/processed/num_rooftops.rds")
-
-
-intersections_land <- intersections_land %>% 
-  select(Intersection_ID, ID, GEOID, BG_TOTAL_AREA, INTERSECTION_TOTAL_AREA, INTERSECTION_LAND_AREA, BG_LAND_AREA)
-
-# Joining the intersection areas with the rooftops that reside inside of them.
-# 
-# See this thread for the basic idea. The default join for 
-# st_join is st_intersects, this is basically intersect the two and choose pull the info of the largest intersection area into the rooftop dataset.
-# https://github.com/r-spatial/sf/issues/578
-
-
-# NOTE: have to rethink the join to account for total bg area as opposed to the largest intersection area (see Jamboard)
-# https://jamboard.google.com/d/1L5YrUrmOUpmQp8X6w2gaz51Fz6We8b0uV-Hm5g4aU2E/viewer?ts=63d15e99&f=1
-# This took a very long time
-roofs_in_intersect <- st_join(
-  rooftops_clean,  
-  intersections_land,
-  left= FALSE, # inner join
-  largest = TRUE)
-
-# Here's an example of what this is doing.
-roofs_in_intersect_filt <- roofs_in_intersect |> 
-  filter(ID %in% c(2708, 2709)) |> 
-  mutate(Intersection_ID = as.character(Intersection_ID))
-
-mapview(roofs_in_intersect_filt, zcol = "Intersection_ID") +
-  mapview(intersections |> 
-            filter(ID %in% roofs_in_intersect_filt$ID), 
-          alpha.region = 0.01, layer.name = "Intersection")
-
-num_rooftops <- roofs_in_intersect %>% 
-  st_drop_geometry() %>% 
-  group_by(Intersection_ID) %>% 
-  mutate(num_roof = n()) %>% 
-  distinct(Intersection_ID, ID, GEOID, BG_TOTAL_AREA, BG_LAND_AREA, INTERSECTION_TOTAL_AREA, INTERSECTION_LAND_AREA, num_roof)
-
-saveRDS(roofs_in_intersect, "data/processed/rooftops_in_intersect.rds")
-saveRDS(num_rooftops, "data/processed/num_rooftops_intersect.rds")
-```
-
-Looking to see how many rooftops are in multiple intersections
-
-```{r}
-roofs_in_intersect2 <- st_join(
-  rooftops_clean,  
-  intersections_land,
-  left= FALSE) %>% 
-  group_by(STRUCT_ID) %>% 
-  mutate(num_intersections = n()) 
-
-roofs_in_intersect2 <- roofs_in_intersect2 %>% 
-  distinct(STRUCT_ID, num_intersections) %>% 
-  filter(num_intersections > 1)
-
-# 4 intersections: 6 rooftops
-# 3 intersections: 133 rooftops
-# 2 intersections: 90 rooftops
-# Percent of rootops (240492) that are in 3+ intersections: 0.058%
-  
-```
-
-#### Determine the percentage of population that belongs to each intersection in the TAZ based on the number of rooftops
-
-```{r}
-# Pull in the rooftops that were calculated in the last step.
-roofs_in_intersect <- read_rds("./data/processed/rooftops_in_intersect.rds")
-
-num_rooftops <-  read_rds("data/processed/num_rooftops_intersect.rds")
-
-# Calculate the share of the GEOID in each TAZ.
-rooftop_share <- num_rooftops |> 
-  group_by(GEOID) |>  
-  mutate(rooftop_pct = num_roof/sum(num_roof))
-
-write_csv(rooftop_share, "./output/data/rooftop_share_plymouth.csv")
-```
-
-```{r}
-# Get population for block groups
-census_pop <- minority_tidy %>% 
-  select(c(GEOID, summary_value)) %>% 
-  rename(population_BG = summary_value)
-
-census_pop$GEOID <-str_remove_all(census_pop$GEOID, "1500000US")
-
-pop_percent <- rooftop_share %>% 
-  left_join(census_pop) %>% 
-  # per BG: get population in each intersecting TAZ
-  mutate(population_intersection = rooftop_pct * as.numeric(population_BG)) %>% 
-  group_by(ID) %>% 
-  # per TAZ: add up the population in each intersecting BG
-  mutate(population_TAZ_roof = sum(population_intersection)) %>% 
-  ungroup()
-
-TAZ_pop_rooftops <- pop_percent %>% 
-  distinct(ID, population_TAZ_roof)
-
-TAZ_plot <- TAZ_ply %>% 
-  left_join(TAZ_pop_rooftops)
-
-mapview(TAZ_plot, zcol = "population_TAZ_roof")
 ```
 
 ## Review Population Effects
