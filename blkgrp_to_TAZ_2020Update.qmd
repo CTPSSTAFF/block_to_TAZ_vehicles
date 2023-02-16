@@ -434,7 +434,7 @@ area <- read_csv("./output/data/area_allocation_BosMPO.csv")
 roof <- read_csv("./output/data/rooftop_allocation_MPO_largest_in_each.csv") |> select(-tot_roofs)
 
 # Put each of the three methodologies together into a single table. # We can use this table as the basis for our comparisons and tests.
-allocation_results <- full_join(area, roof)
+allocation_results <- full_join(area, roof, by = c("GEOID", "ID"))
 
 # Import the census block group info for MA. 
 
