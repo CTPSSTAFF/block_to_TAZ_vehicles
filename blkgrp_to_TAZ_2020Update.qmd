@@ -184,11 +184,13 @@ water <-
     county = fips_codes |> filter(state == "MA") |> select(county_code) |> pull()
   ) |> st_drop_geometry()
 
-water2 <- water |> arrange(desc(AWATER)) |> 
+# Sort our water find the share of the area and the percentile of each body of water.
+water <- water |> 
+  arrange(desc(AWATER)) |> 
   mutate(share_of_area = cumsum(AWATER)/sum(AWATER),
          ntile = row_number()/n())
 
-ggplot(water2, aes(x= ntile, y = share_of_area)) + 
+ggplot(water, aes(x= ntile, y = share_of_area)) + 
   geom_point() +
   scale_x_continuous(labels = scales::percent_format()) +
   scale_y_continuous(labels = scales::percent_format())
@@ -313,6 +315,14 @@ rooftops <- read_rds("./data/processed/rooftops.rds")
 mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 ```
 
+We can make our work faster by pre-filtering the list of roofs in the Boston MPO. By using the buffer we should be able to include all the roofs of concern.
+
+```{r}
+# rooftops <- st_filter(rooftops, TAZ_buffer)
+# saveRDS(rooftops, "./data/processed/rooftops_MPO.rds")
+rooftops <- readRDS("./data/processed/rooftops_MPO.rds")
+```
+
 #### Cleaning duplicate and NA rooftop IDs.
 
 ```{r}
@@ -401,6 +411,8 @@ roof_shares_MPO <- rooftops_clean |>
   left_join(roof_cbg_MPO, by = "STRUCT_ID") |> 
   left_join(roof_taz_MPO, by = "STRUCT_ID")
 
+saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
+saveRDS(roof_taz, "./data/processed/roof_taz.rds")
 saveRDS(roof_cbg_MPO, "./data/processed/roof_cbg_MPO.rds")
 saveRDS(roof_taz_MPO, "./data/processed/roof_taz_MPO.rds")
 saveRDS(roof_shares_MPO, "./data/processed/roof_shares_MPO.rds")
