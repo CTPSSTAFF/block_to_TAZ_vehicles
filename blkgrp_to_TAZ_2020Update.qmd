@@ -193,7 +193,8 @@ water <- water |>
 ggplot(water, aes(x= ntile, y = share_of_area)) + 
   geom_point() +
   scale_x_continuous(labels = scales::percent_format()) +
-  scale_y_continuous(labels = scales::percent_format())
+  scale_y_continuous(labels = scales::percent_format()) +
+  coord_cartesian(xlim = c(0,0.25))
 ```
 
 ```{r}
