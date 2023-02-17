@@ -340,7 +340,8 @@ repeats <- rooftops |>
 # View(repeats)
 
 # Find the rooftops with unique STRUCT_IDs. These roofs do not need to be filtered.
-unique_roof <- rooftops %>% filter(!(STRUCT_ID %in% repeats$STRUCT_ID)) %>% 
+unique_roof <- rooftops %>% 
+  filter(!(STRUCT_ID %in% repeats$STRUCT_ID)) %>% 
   select(STRUCT_ID, geometry)
 
 # Find the rooftops with repeated or NA STRUCT_IDs. These roofs need to be cleaned.
@@ -351,7 +352,10 @@ repeat_roof <- rooftops %>%
 ## Clean NAs
 # All NAs will be replaced by a new id
 repeat_roof <- repeat_roof |>
-  mutate(STRUCT_ID = coalesce(STRUCT_ID, paste0(row_number(), "_replaced_na")))
+  mutate(STRUCT_ID = coalesce(
+    STRUCT_ID, 
+    paste0(row_number(), "_replaced_na")
+    ))
 
 # Roofs with duplicate ids will be merged into a single roof.
 repeat_roof <- repeat_roof %>% 
@@ -393,6 +397,13 @@ roof_cbg <- st_join(
 ) |> st_drop_geometry()
 tictoc::toc()
 
+# get rid of rooftops that are mostly not in the MPO taz or bgs
+roof_cbg_MPO <- roof_cbg %>% 
+  filter(GEOID %in% blk_group_MPO$GEOID)
+
+saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
+saveRDS(roof_cbg_MPO, "./data/processed/roof_cbg_MPO.rds")
+
 tictoc::tic()
 roof_taz <- st_join(
   rooftops_clean,
@@ -402,24 +413,19 @@ roof_taz <- st_join(
 )|> st_drop_geometry()
 tictoc::toc()
 
-# get rid of rooftops that are mostly not in the MPO taz or bgs
-roof_cbg_MPO <- roof_cbg %>% 
-  filter(GEOID %in% blk_group_MPO$GEOID)
-
 roof_taz_MPO <- roof_taz %>% 
   filter(RPA == "MAPC")
+
+saveRDS(roof_taz, "./data/processed/roof_taz.rds")
+saveRDS(roof_taz_MPO, "./data/processed/roof_taz_MPO.rds")
 
 # Make a single table where each rooftop is assigned to the CBG its most in and the TAZ its most in.
 roof_shares_MPO <- rooftops_clean |> 
   st_drop_geometry() |> 
-  filter(STRUCT_ID %in% roof_cbg$STRUCT_ID) |> 
+  # filter(STRUCT_ID %in% roof_cbg$STRUCT_ID) |> 
   left_join(roof_cbg_MPO, by = "STRUCT_ID") |> 
   left_join(roof_taz_MPO, by = "STRUCT_ID")
 
-saveRDS(roof_cbg, "./data/processed/roof_cbg.rds")
-saveRDS(roof_taz, "./data/processed/roof_taz.rds")
-saveRDS(roof_cbg_MPO, "./data/processed/roof_cbg_MPO.rds")
-saveRDS(roof_taz_MPO, "./data/processed/roof_taz_MPO.rds")
 saveRDS(roof_shares_MPO, "./data/processed/roof_shares_MPO.rds")
 
 #roof_cbg <- readRDS("./data/processed/roof_cbg.rds")
@@ -435,7 +441,8 @@ roof_shares_ratio <- roof_shares_MPO |>
   mutate(BG_RT_pct = tot_roofs/sum(tot_roofs))
 tictoc::toc()
 
-write_csv(roof_shares_ratio, file = "./output/data/rooftop_allocation_MPO_largest_in_each.csv")
+write_csv(roof_shares_ratio, 
+          file = "./output/data/rooftop_allocation_MPO_largest_in_each.csv")
 
 ```
 
