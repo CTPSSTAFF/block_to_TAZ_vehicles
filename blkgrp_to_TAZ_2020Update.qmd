@@ -318,9 +318,13 @@ mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 We can make our work faster by pre-filtering the list of roofs in the Boston MPO. By using the buffer we should be able to include all the roofs of concern.
 
 ```{r}
-# rooftops <- st_filter(rooftops, TAZ_buffer)
-# saveRDS(rooftops, "./data/processed/rooftops_MPO.rds")
-rooftops <- readRDS("./data/processed/rooftops_MPO.rds")
+full_buffer <- st_union(blk_group_MPO_buffer, 
+                        TAZ_buffer) |> 
+  summarize()
+
+rooftops <- st_filter(rooftops, full_buffer)
+saveRDS(rooftops, "./data/processed/rooftops_MPO.rds")
+# rooftops <- readRDS("./data/processed/rooftops_MPO.rds")
 ```
 
 #### Cleaning duplicate and NA rooftop IDs.
@@ -340,7 +344,8 @@ unique_roof <- rooftops %>% filter(!(STRUCT_ID %in% repeats$STRUCT_ID)) %>%
   select(STRUCT_ID, geometry)
 
 # Find the rooftops with repeated or NA STRUCT_IDs. These roofs need to be cleaned.
-repeat_roof <- rooftops %>% filter(STRUCT_ID %in% repeats$STRUCT_ID) %>% 
+repeat_roof <- rooftops %>% 
+  filter(STRUCT_ID %in% repeats$STRUCT_ID) %>% 
   select(STRUCT_ID, geometry)
 
 ## Clean NAs
@@ -489,7 +494,9 @@ Check that we have retained all of our GEOID area. These values should add up to
 
 ```{r}
 
-flags <- allocation_results |> group_by(GEOID) |> 
+flags <- allocation_results |> 
+  filter(ID %in% TAZ_MPO$ID) |>
+  group_by(GEOID) |> 
   summarize(tot_LA_in_CBG = sum(BG_LA_pct, na.rm = TRUE),
             tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE),
             tot_RT_in_CBG = sum(BG_RT_pct, na.rm = TRUE)
@@ -502,6 +509,7 @@ flags <- allocation_results |> group_by(GEOID) |>
 mapview(blk_group_MPO_buffer |> filter(GEOID %in% flags$GEOID)) +
   mapview(TAZ_MPO |> st_union(), col.regions = "green") +
   mapview(TAZ_MPO_buffer, col.regions = "red")
+
 ```
 
 ### Compare Population Estimates
