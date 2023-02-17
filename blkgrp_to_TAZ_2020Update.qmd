@@ -319,12 +319,13 @@ mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 We can make our work faster by pre-filtering the list of roofs in the Boston MPO. By using the buffer we should be able to include all the roofs of concern.
 
 ```{r}
-full_buffer <- st_union(blk_group_MPO_buffer, 
-                        TAZ_buffer) |> 
+full_buffer <- st_union(blk_group_MPO_buffer,
+                        TAZ_buffer) |>
   summarize()
 
 rooftops <- st_filter(rooftops, full_buffer)
 saveRDS(rooftops, "./data/processed/rooftops_MPO.rds")
+
 # rooftops <- readRDS("./data/processed/rooftops_MPO.rds")
 ```
 
