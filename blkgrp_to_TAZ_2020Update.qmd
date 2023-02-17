@@ -489,7 +489,7 @@ Check that we have retained all of our GEOID area. These values should add up to
 
 ```{r}
 
-allocation_results |> group_by(GEOID) |> 
+flags <- allocation_results |> group_by(GEOID) |> 
   summarize(tot_LA_in_CBG = sum(BG_LA_pct, na.rm = TRUE),
             tot_FA_in_CBG = sum(BG_FA_pct, na.rm = TRUE),
             tot_RT_in_CBG = sum(BG_RT_pct, na.rm = TRUE)
@@ -497,8 +497,11 @@ allocation_results |> group_by(GEOID) |>
   ungroup() |> 
   filter(tot_FA_in_CBG < 0.999 | 
            tot_LA_in_CBG < 0.999 |
-           tot_RT_in_CBG < 0.999) |> 
-  View()
+           tot_RT_in_CBG < 0.999)
+
+mapview(blk_group_MPO_buffer |> filter(GEOID %in% flags$GEOID)) +
+  mapview(TAZ_MPO |> st_union(), col.regions = "green") +
+  mapview(TAZ_MPO_buffer, col.regions = "red")
 ```
 
 ### Compare Population Estimates
