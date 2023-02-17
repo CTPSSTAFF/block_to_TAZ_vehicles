@@ -65,6 +65,9 @@ library(mapview)
 library(sf)
 library(units)
 library(rgeos)
+library(sp)
+library(mapview)
+library(leafsync)
 ```
 
 ## Load Census, TAZ, and Rooftop Shapes
@@ -461,8 +464,10 @@ minority_tidy <- tidycensus::get_decennial(
   variable = "P2_005N",
   summary_var = "P1_001N",
   year = 2020) |> 
-  select(GEOID, min_pop = value, tot_pop = summary_value) |> 
-  mutate(GEOID = as.numeric(GEOID))
+  select(GEOID, nonmin_pop = value, tot_pop = summary_value) |> 
+  mutate(GEOID = as.numeric(GEOID)) |>
+  mutate(min_pop = tot_pop- nonmin_pop) |>
+  select(-nonmin_pop)
 
 # Join the population to the CBGs.
 TAZ_results <- allocation_results |> 
@@ -517,11 +522,14 @@ min_results <- TAZ_results %>%
 tot_results <- TAZ_results %>% 
   select(LA_tot, FA_tot, RT_tot)
 
-percentages <- TAZ_results %>% 
+percentages_ID <- TAZ_results %>% 
   mutate(LA_pct_min = 100 * LA_min / LA_tot,
          FA_pct_min = 100 * FA_min / FA_tot,
          RT_pct_min = 100 * RT_min / RT_tot) %>% 
-  select(LA_pct_min, FA_pct_min, RT_pct_min )
+  select(ID, LA_pct_min, FA_pct_min, RT_pct_min )
+
+percentages <- percentages_ID %>% 
+  select(-ID)
 
 ggpairs(min_results, title="Correlogram For Minority Pop") 
 ggpairs(tot_results, title="Correlogram For Total Pop")
@@ -530,6 +538,30 @@ ggpairs(percentages, title="Correlogram For Percent Minority")
 ```
 
 ## Map Comparison
+
+```{r}
+
+TAZ_map <- TAZ_MPO %>% 
+  left_join(percentages_ID) %>% 
+  left_join(TAZ_results)
+
+
+block_group_map <- blk_group_MPO %>% 
+  mutate(GEOID = as.numeric(GEOID)) %>% 
+  left_join(minority_tidy) %>% 
+  mutate(pct_min = 100 * min_pop / tot_pop)
+
+
+
+# Minority Percent
+mpct_LA <- mapview(TAZ_map, zcol = "LA_pct_min", at = seq(0,100,20), lwd = 0, legend = TRUE)
+mpct_FA <- mapview(TAZ_map, zcol = "FA_pct_min", at = seq(0,100,20),lwd = 0, legend = FALSE)
+mpct_RT <- mapview(TAZ_map, zcol = "RT_pct_min", at = seq(0,100,20),lwd = 0, legend = FALSE)
+mpct_BG <- mapview(block_group_map, zcol = "pct_min", at = seq(0,100,20),lwd = 0, legend = FALSE)
+
+sync(mpct_LA, mpct_FA, mpct_RT, mpct_BG) # 4 panels synchronised
+
+```
 
 ## Trailing Thoughts
 
