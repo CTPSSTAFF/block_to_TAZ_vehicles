@@ -338,6 +338,10 @@ full_buffer <- st_union(blk_group_MPO_buffer_summ,
 rooftops <- st_filter(rooftops, full_buffer)
 saveRDS(rooftops, "./data/processed/rooftops_MPO.rds")
 
+# tictoc::tic()
+# roof_filt <- st_is_within_distance(rooftops, full_buffer, dist = 0, sparse = FALSE)
+# tictoc::toc()
+# rooftops_MPO <- rooftops[roof_filt == TRUE,]
 # rooftops <- readRDS("./data/processed/rooftops_MPO.rds")
 ```
 
