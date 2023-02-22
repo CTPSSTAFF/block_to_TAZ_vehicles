@@ -201,12 +201,13 @@ ggplot(water, aes(x= ntile, y = share_of_area)) +
 ```
 
 ```{r}
-intersections_land <- tigris::erase_water(intersections, 
-                                area_threshold = 0.50, 
-                                year = 2020)
+# intersections_land <- tigris::erase_water(intersections, 
+#                                 area_threshold = 0.50, 
+#                                 year = 2020)
 
-saveRDS(intersections_land, "./data/processed/intersections_land.rds")
-#intersections_land <- read_rds("./data/processed/intersections_land.rds")
+# saveRDS(intersections_land, "./data/processed/intersections_land.rds")
+
+intersections_land <- read_rds("./data/processed/intersections_land.rds")
 
 ```
 
@@ -319,11 +320,19 @@ rooftops <- read_rds("./data/processed/rooftops.rds")
 mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
 ```
 
-We can make our work faster by pre-filtering the list of roofs in the Boston MPO. By using the buffer we should be able to include all the roofs of concern.
+We can make our work faster by pre-filtering the list of roofs in the Boston MPO. By using the buffers we should be able to include all the roofs of concern.
 
 ```{r}
-full_buffer <- st_union(blk_group_MPO_buffer,
-                        TAZ_MPO_buffer) |>
+TAZ_MPO_buffer_summ <- TAZ_MPO_buffer |>
+  ungroup() |> 
+  summarize()
+
+blk_group_MPO_buffer_summ <- blk_group_MPO_buffer |>
+  ungroup() |>  
+  summarize()
+
+full_buffer <- st_union(blk_group_MPO_buffer_summ,
+                        TAZ_MPO_buffer_summ) |>
   summarize()
 
 rooftops <- st_filter(rooftops, full_buffer)
