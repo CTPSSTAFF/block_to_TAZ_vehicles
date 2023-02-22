@@ -323,7 +323,7 @@ We can make our work faster by pre-filtering the list of roofs in the Boston MPO
 
 ```{r}
 full_buffer <- st_union(blk_group_MPO_buffer,
-                        TAZ_buffer) |>
+                        TAZ_MPO_buffer) |>
   summarize()
 
 rooftops <- st_filter(rooftops, full_buffer)
