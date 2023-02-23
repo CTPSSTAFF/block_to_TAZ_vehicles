@@ -335,8 +335,8 @@ full_buffer <- st_union(blk_group_MPO_buffer_summ,
                         TAZ_MPO_buffer_summ) |>
   summarize()
 
-rooftops <- st_filter(rooftops, full_buffer)
-saveRDS(rooftops, "./data/processed/rooftops_MPO.rds")
+#rooftops <- st_filter(rooftops, full_buffer)
+#saveRDS(rooftops, "./data/processed/rooftops_MPO.rds")
 
 # tictoc::tic()
 # roof_filt <- st_is_within_distance(rooftops, full_buffer, dist = 0, sparse = FALSE)
@@ -480,6 +480,9 @@ roof <- read_csv("./output/data/rooftop_allocation_MPO_largest_in_each.csv") |> 
 # Put each of the three methodologies together into a single table. # We can use this table as the basis for our comparisons and tests.
 allocation_results <- full_join(area, roof, by = c("GEOID", "ID")) |> 
   filter(ID %in% TAZ_MPO$ID)
+
+write_csv(allocation_results, "./output/data/allocation_results_BosMPO.csv")
+
 
 # Import the census block group info for MA. 
 
