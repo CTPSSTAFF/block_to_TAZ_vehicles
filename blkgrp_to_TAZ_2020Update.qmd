@@ -317,7 +317,44 @@ We pull the pre-stored rooftops file in and show an example. The file generally 
 ```{r}
 # rooftops.rds reated previously.
 rooftops <- read_rds("./data/processed/rooftops.rds")
-mapview(rooftops |> filter(STRUCT_ID == "53226_895084"))
+
+# Test a small scale example.
+# https://stackoverflow.com/questions/52522872/r-sf-package-centroid-within-polygon/55099535#55099535
+
+# https://github.com/r-spatial/sf/issues/1302
+
+# https://gis.stackexchange.com/questions/76498/how-is-st-pointonsurface-calculated
+
+
+rooftops_filt <- rooftops |> tail(1000)
+
+rooftops_filt_pos <- rooftops_filt |>
+  st_point_on_surface()
+
+rooftops_filt_cent <- rooftops_filt |>
+  st_centroid()
+
+mapview(rooftops_filt_pos, col.regions = "green") + 
+     mapview(rooftops_filt_cent, col.regions = "red") + 
+     mapview(rooftops_filt, col.regions = "grey50")
+
+# rooftops_cent <- rooftops |> st_centroid()
+# saveRDS(rooftops_cent, "./data/processed/rooftops_cent.rds")
+rooftops_cent <- readRDS("./data/processed/rooftops_cent.rds") |> select(STRUCT_ID)
+
+# rooftops_pos <- rooftops |> st_point_on_surface()
+# saveRDS(rooftops_pos, "./data/processed/rooftops_pos.rds")
+rooftops_pos <- readRDS("./data/processed/rooftops_pos.rds") |> select(STRUCT_ID)
+
+mapview(rooftops |> filter(STRUCT_ID == "53226_895084")) +
+  mapview(rooftops_cent |> filter(STRUCT_ID == "53226_895084"), col.regions = "red") + 
+    mapview(rooftops_pos |> filter(STRUCT_ID == "53226_895084"), col.regions = "green")
+
+rooftops <- rooftops_pos
+
+rm(rooftops_cent, rooftops_pos)
+
+pryr::mem_used()
 ```
 
 We can make our work faster by pre-filtering the list of roofs in the Boston MPO. By using the buffers we should be able to include all the roofs of concern.
