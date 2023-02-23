@@ -568,6 +568,16 @@ ggpairs(min_results, title="Correlogram For Minority Pop")
 ggpairs(tot_results, title="Correlogram For Total Pop")
 ggpairs(percentages, title="Correlogram For Percent Minority")
 
+ggsave(plot = last_plot(), 
+  file = "PctMinorityComparison.png", 
+  height = 8.5, width = 11, units = "in", 
+  type = "cairo-png", dpi = 300, path = "./output/figures/")
+
+ggsave(plot = last_plot(), 
+  file = "PctMinorityComparison.png", 
+  height = 8.5, width =11, units = "in", 
+  type = "cairo-png", dpi = 300, path = "./images/")
+
 ```
 
 ## Map Comparison
