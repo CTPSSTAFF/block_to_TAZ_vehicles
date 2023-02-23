@@ -61,7 +61,9 @@ Potential Solutions
     1.  Allocate based on where the largest piece of the rooftop is
         **(chosen)**
     2.  Where the centroid of the roof is–could be a more scalable
-        method, but would want a method to keep the centroid within the
+        method–assuming intersecting points and polygons is more
+        efficient that polygons and polygons and calculating shares in
+        each, but would want a method to keep the centroid within the
         geometry.
     3.  Allocate proportionally based on the rooftop area-seems overly
         complicated
@@ -116,3 +118,23 @@ large, typically modified–datasets stored as serialized `.rds` files.
     |   \-- data
     +-- README.md
     \-- README.qmd (generates readme.md)
+
+## Results
+
+The final results are found in the `./output/data` folder:
+
+Area based methods: `./output/data/area_allocation_BosMPO.csv`
+
+Rooftop based method:
+`./output/data/rooftop_allocation_MPO_largest_in_each.csv`
+
+All methods: `./output/data/allocation_results_BosMPO.csv`
+
+## Comparison of results:
+
+The three methods tend to generate very similar results at a percentage
+level (there is a little more “fuzz” at the total levels). There are
+dozens of interesting lines that are not on the 1:1 line that we can
+explore in more detail.
+
+![](images/PctMinorityComparison.png)
