@@ -316,7 +316,8 @@ We pull the pre-stored rooftops file in and show an example. The file generally 
 
 ```{r}
 # rooftops.rds reated previously.
-rooftops <- read_rds("./data/processed/rooftops.rds")
+rooftops <- read_rds("./data/processed/rooftops.rds") |> 
+  select(STRUCT_ID)
 
 # Test a small scale example.
 # https://stackoverflow.com/questions/52522872/r-sf-package-centroid-within-polygon/55099535#55099535
@@ -354,7 +355,7 @@ rooftops <- rooftops_pos
 
 rm(rooftops_cent, rooftops_pos)
 
-pryr::mem_used()
+gc()
 ```
 
 We can make our work faster by pre-filtering the list of roofs in the Boston MPO. By using the buffers we should be able to include all the roofs of concern.
