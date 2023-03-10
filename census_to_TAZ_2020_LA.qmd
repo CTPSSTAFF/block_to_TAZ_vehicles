@@ -60,7 +60,7 @@ library(mapview)
 library(leafsync)
 ```
 
-## Load Census, TAZ, and Rooftop Shapes
+## Load Census and TAZ
 
 ```{r}
 #| results: hide
@@ -276,7 +276,7 @@ mapview(TAZ_MPO |>
 
 #### 
 
-## Join the Roofs, Land Area, All Area Methods
+## Finding TAZ Results
 
 ```{r}
 area <- read_csv("./output/data/tracts/area_allocation_BosMPO.csv")
@@ -311,6 +311,28 @@ TAZ_results <- allocation_results |>
   summarize(LA_min = sum(TRACT_LA_min, na.rm=TRUE),
             LA_tot = sum(TRACT_LA_tot, na.rm=TRUE))
   
+```
+
+### Testing Areal-weighted Interpolation of Polygon Data
+
+```{r}
+
+tracts_MPO$GEOID <- as.numeric(tracts_MPO$GEOID)
+
+tracts_w_min <- tracts_MPO %>% left_join(minority_tidy)
+
+tracts_land <- tigris::erase_water(tracts_w_min, 
+                                area_threshold = 0, 
+                                year = 2020)
+
+TAZ_land <- tigris::erase_water(TAZ_MPO, 
+                                area_threshold = 0, 
+                                year = 2020)
+
+new_method <- st_interpolate_aw(tracts_land, TAZ_land, extensive = TRUE)
+
+mapview(new_method, zcol = "min_pop") 
+mapview(TAZ_map, zcol = "LA_min")
 ```
 
 ### Testing
