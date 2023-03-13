@@ -9,6 +9,7 @@ library(sp)
 library(mapview)
 library(leafsync)
 
+library(tidycensus)
 
 # Obtaining VRE Data
 # https://www2.census.gov/programs-surveys/acs/replicate_estimates/2021/data/5-year/140/
@@ -48,7 +49,34 @@ MOE_check <- VRE_table_min$MOE ** 2 %>%
   sqrt()
 # MOE and MOE_check don't match exactly (257 to 263)
 
+# When summing margins of error with multiple 0 estimates, only keep one.
+# This process may fail for anything but a simple example. 
+# Located at the bottom of: https://www2.census.gov/programs-surveys/acs/tech_docs/accuracy/MultiyearACSAccuracyofData2015.pdf
+# ISSUES WITH APPROXIMATING THE STANDARD ERROR OF LINEAR 
+# COMBINATIONS OF MULTIPLE ESTIMATES
 
+MOE_check_keep_one_zero <- VRE_table_min |> 
+  distinct(ESTIMATE, MOE) |> 
+  mutate(MOE_SQ = MOE ** 2) |> 
+  summarize(SUM_SQ = sum(MOE_SQ)) |> 
+  pull() |> 
+  sqrt()
+
+vars_acs <- tidycensus::load_variables(year = 2021, dataset = "acs5")
+tc_tabs <- paste0("B03002_", str_pad( c(4:9, 12), width = 3,side = "left", pad = 0))
+tc_method <- tidycensus::get_acs(geography = "tract", 
+                                 state = "MA", 
+                                 variables = tc_tabs,
+                                 year = 2021) |> 
+  inner_join(vars_acs, by = c("variable" = "name")) |> 
+  filter(GEOID == "25001010100")
+
+tc_sum <- tc_method |> 
+  summarize(MOE = moe_sum(moe = moe, estimate = estimate)) |> 
+  pull()
+
+# Check if these match. They do!
+MOE_check_keep_one_zero == tc_sum
 
 # Find MOE of non-hispanic/latino white for each tract by using replicate estimates
 
