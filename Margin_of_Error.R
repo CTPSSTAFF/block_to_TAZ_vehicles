@@ -78,6 +78,7 @@ tc_sum <- tc_method |>
 # Check if these match. They do!
 MOE_check_keep_one_zero == tc_sum
 
+# All tracts ---------------
 # Find MOE of non-hispanic/latino white for each tract by using replicate estimates
 
 VRE_table_white <- VRE_table %>% 
@@ -98,3 +99,11 @@ MOE_white <-  1.645 * sqrt(variance_white)
 MOE_white_check <- VRE_table_white$MOE ** 2 %>% 
   sum() %>% 
   sqrt()
+
+MOE_white_check_keep_one_zero <- VRE_table_white |> 
+  distinct(ESTIMATE, MOE) |> 
+  mutate(MOE_SQ = MOE ** 2) |> 
+  summarize(SUM_SQ = sum(MOE_SQ)) |> 
+  pull() |> 
+  sqrt()
+
