@@ -27,10 +27,6 @@ Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate
 
 -   We want the process to be maintainable over multiple ACS iterations.
 
-**Other Goals**
-
--   Create multiple methods to compare the sensitivity to methodology.
-
 **Potential Solutions**
 
 When joining 2010 census blocks to TAZs, Paul Reim performed a series of intersections to identify where blocks were split. Where a TAZ split a block, he counted rooftops and used StreetView to estimate how many rooftops were in each TAZ. It is not desirable to maintain such a process--the reproducibility is limited and its highly manual.
@@ -40,8 +36,6 @@ We have decided to focus on **land area** as the method to allocate census popul
 ### Useful references
 
 -   massgis census: <https://www.mass.gov/info-details/massgis-data-2020-us-census>
-
--   MassDOT rooftops: <https://www.mass.gov/info-details/massgis-data-building-structures-2-d>
 
 ## Set up Packages
 
@@ -149,14 +143,16 @@ We now have the full area of the tracts and the area of the intersections.
 
 ### Erase Water From Intersections
 
-We can now remove the water from the intersections. By doing this now, we only remove the water area once. We set the limit at the top 50% of water areas.
+We can now remove the water from the intersections. By doing this now, we only remove the water area once. We eliminate all of the water area.
 
 ```{r}
 water <-
   area_water(
     state = "MA",
     year = 2020,
-    county = fips_codes |> filter(state == "MA") |> select(county_code) |> pull()
+    county = fips_codes |> 
+      filter(state == "MA") |> 
+      select(county_code) |> pull()
   ) |> st_drop_geometry()
 
 # Sort our water find the share of the area and the percentile of each body of water.
@@ -273,8 +269,6 @@ mapview(TAZ_MPO |>
           layer.name = "Intersection") + 
   mapview(TAZ_MPO |> st_union())
 ```
-
-#### 
 
 ## Finding TAZ Results
 
@@ -408,26 +402,3 @@ sync(mpct_LA, mpct_tract) # 2 panels synchronised
 Some TAZs are smaller than census block groups. Do we need to adjust the method of analysis for those cases? It could be the same. Since we are looking for the percentage of the block group that is within the TAZ, then it wouldn't matter if it is smaller or larger. In this case, it just wouldn't also be sharing area with other block groups.
 
 ![](images/image-779890944.png)
-
-### Extensions
-
-We still can explore the dasymetric method of assigning population to blocks. This method allocates people among areas that are livable--reasonable slopes, not roads.
-
-We can also switch to a new rooftop data source that contains rooftops for NH, RI, and MA: [Microsoft: USBuildingFootprints](https://github.com/Microsoft/USBuildingFootprints).
-
-Maps
-
-Quick presentation
-
-Lean on graphics
-
-Questions:
-
-Preferences?
-
-Next steps:\
-Dasymetric
-
-Tracts vs bg
-
-if we want to go more, need to switch rooftop datasets
