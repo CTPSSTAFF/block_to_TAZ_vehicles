@@ -107,3 +107,39 @@ MOE_white_check_keep_one_zero <- VRE_table_white |>
   pull() |> 
   sqrt()
 
+
+# Margin of Error Example
+# 
+demo <- 
+  tibble(muni = c("Somerville", "Cambridge"),
+         under5 = c(2905, 4000),
+         moe = c(797, 800),
+         share = c(0.3, 0.4))
+
+demo <- demo |> 
+  mutate(minval = under5 - moe,
+         maxval = under5 + moe) |> 
+  mutate(under5_alloc = under5 * share,
+         minval_alloc = minval * share,
+         maxval_alloc = maxval * share) |> 
+  mutate(tc_moe_alloc = moe * share)
+
+# tc_moe_sum uses the allocated share of the MOE then performs the 
+# sum of squares. 
+# 
+# moe_alloc uses the share of the min/max values (calcd by adding the MOEs)
+# then finds the MOE after adding the shares. 
+# in this case, and probably all cases, moe_alloc should be greater than or 
+# equal to tc_moe_sum.
+# 
+demo_summ <- demo |> 
+  summarize(
+    tot_under5 = sum(under5), 
+    moe = moe_sum(moe, estimate = under5),
+    
+    tc_moe_sum = moe_sum(moe = tc_moe_alloc, estimate = under5_alloc),
+    
+    under5_sum = sum(under5_alloc),
+    minval_sum = sum(minval_alloc),
+    maxval_sum = sum(maxval_alloc)) |> 
+  mutate(moe_alloc = under5_sum - minval_sum)
