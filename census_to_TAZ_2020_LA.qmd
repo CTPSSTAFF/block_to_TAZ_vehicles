@@ -62,17 +62,30 @@ library(leafsync)
 #Load TAZ shapes
 TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg") %>% 
   st_transform(26986) %>% 
-  filter(STATE == "MA") # Filtering to only in MA
+  filter(STATE %in% c("MA", "RI", "NH"))# Filtering to only in MA, RI, and NH
 
 TAZ$TAZ_area <- st_area(TAZ)
   #filter(ID == 4398) # Filtering for one example
 
 # OBtain the 2020 tracts from the tigris package.
 # The CB false (the more detailed) geometry looked like it matched up better, so we move forward with that path.
-tracts <- tigris::tracts(state = "MA", 
+tracts_MA <- tigris::tracts(state = "MA", 
                                 cb = FALSE, 
                                 year = 2020) %>% 
   st_transform(26986)
+
+tracts_RI <- tigris::tracts(state = "RI", 
+                                cb = FALSE, 
+                                year = 2020) %>% 
+  st_transform(26986)
+
+tracts_NH <- tigris::tracts(state = "NH", 
+                                cb = FALSE, 
+                                year = 2020) %>% 
+  st_transform(26986)
+
+tracts <- bind_rows(tracts_MA, tracts_RI, tracts_NH)
+rm(tracts_MA, tracts_NH, tracts_RI)
 
 # Clip the tracts to match the geometry of the TAZ file. This will eliminate coastal waters but retain inland waters. This is a useful starting place to have a similar coast line. This will also make our `erase_water` function work on a more similar set of water.
 
@@ -92,28 +105,6 @@ tracts <- tracts |>
   group_by(GEOID, ALAND, AWATER) |> 
   summarize()
 
-#massgis rooftops: https://www.mass.gov/info-details/massgis-data-building-structures-2-d
-# Download the file into "./data/base/" and then read it in here. Save it as a .rds for easy loading. Optionally, we could 
-# rooftops <- st_read("data/base/STRUCTURES_POLY.shp")
-# 
-# saveRDS(rooftops, "data/processed/rooftops.rds")
-```
-
-### Filter For MPO Region
-
-We would like to grab the TAZs in the MPO and tracts that touch or may contribute area to those TAZs.
-
-```{r}
-
-# MPO region TAZ
-TAZ_MPO <- TAZ %>% 
-  filter(RPA == "MAPC")
-
-
-# MPO region tracts. These are all the tracts touching the TAZs in the MPO
-tracts_MPO <- tracts[TAZ_MPO,]
-
-
 ```
 
 ## Calculate Intersecting Areas
@@ -123,13 +114,13 @@ tracts_MPO <- tracts[TAZ_MPO,]
 We find the area of the census tracts. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
 
 ```{r}
-tracts_MPO$TRACT_TOTAL_AREA <- (st_area(tracts_MPO) ) 
+tracts$TRACT_TOTAL_AREA <- (st_area(tracts) ) 
 ```
 
 ### Intersect Census Tracts with TAZ
 
 ```{r}
-intersections <- st_intersection(TAZ_MPO, tracts_MPO) %>%
+intersections <- st_intersection(TAZ, tracts) %>%
   st_collection_extract("POLYGON") %>% 
   rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
 
@@ -231,7 +222,7 @@ area_allocation <- intersections_for_alloc |>
 area_allocation <- area_allocation |> 
   group_by(GEOID, ID) |> 
   summarize(TRACT_LA_pct = sum(TRACT_LA_pct, na.rm = TRUE)) |> 
-  filter(ID %in% TAZ_MPO$ID)
+  filter(ID %in% TAZ$ID)
 
 write_csv(area_allocation, "./output/data/tracts/area_allocation_BosMPO.csv")
 ```
@@ -257,17 +248,17 @@ example <- intersections %>%
   filter(GEOID %in% flag$GEOID)
   # filter(GEOID == "250277612002")
 
-mapview(TAZ_MPO |> 
+mapview(TAZ |> 
           filter(ID %in% example$ID), 
         col.regions = "red", 
         layer.name = "TAZ") + 
-  mapview(tracts_MPO |> 
+  mapview(tracts |> 
             filter(GEOID %in% example$GEOID),
           alpha.regions = 0.01, lwd = 3,
           layer.name = "tracts") + 
   mapview(example, zcol = "Intersection_ID",
           layer.name = "Intersection") + 
-  mapview(TAZ_MPO |> st_union())
+  mapview(TAZ |> st_union())
 ```
 
 ## Finding TAZ Results
@@ -276,7 +267,7 @@ mapview(TAZ_MPO |>
 area <- read_csv("./output/data/tracts/area_allocation_BosMPO.csv")
 
 allocation_results <- area
-  filter(ID %in% TAZ_MPO$ID)
+  filter(ID %in% TAZ$ID)
 
 write_csv(allocation_results, "./output/data/tracts/allocation_results_BosMPO.csv")
 
@@ -311,15 +302,15 @@ TAZ_results <- allocation_results |>
 
 ```{r}
 
-tracts_MPO$GEOID <- as.numeric(tracts_MPO$GEOID)
+tracts$GEOID <- as.numeric(tracts$GEOID)
 
-tracts_w_min <- tracts_MPO %>% left_join(minority_tidy)
+tracts_w_min <- tracts %>% left_join(minority_tidy)
 
 tracts_land <- tigris::erase_water(tracts_w_min, 
                                 area_threshold = 0, 
                                 year = 2020)
 
-TAZ_land <- tigris::erase_water(TAZ_MPO, 
+TAZ_land <- tigris::erase_water(TAZ, 
                                 area_threshold = 0, 
                                 year = 2020)
 
@@ -336,14 +327,14 @@ Check that we have retained all of our GEOID area. These values should add up to
 ```{r}
 
 flags <- allocation_results |> 
-  filter(ID %in% TAZ_MPO$ID) |>
+  filter(ID %in% TAZ$ID) |>
   group_by(GEOID) |> 
   summarize(tot_LA_in_tract = sum(TRACT_LA_pct, na.rm = TRUE)) |>
   ungroup() |> 
   filter(tot_LA_in_tract < 0.999 )
 
-mapview(tracts_MPO |> filter(GEOID %in% flags$GEOID)) +
-  mapview(TAZ_MPO |> st_union(), col.regions = "green") 
+mapview(tracts |> filter(GEOID %in% flags$GEOID)) +
+  mapview(TAZ |> st_union(), col.regions = "green") 
 
 ```
 
@@ -375,12 +366,12 @@ percentages <- percentages_ID %>%
 
 ```{r}
 
-TAZ_map <- TAZ_MPO %>% 
+TAZ_map <- TAZ %>% 
   left_join(percentages_ID) %>% 
   left_join(TAZ_results)
 
 
-tract_map <- tracts_MPO %>% 
+tract_map <- tracts %>% 
   mutate(GEOID = as.numeric(GEOID)) %>% 
   left_join(minority_tidy) %>% 
   mutate(pct_min = 100 * min_pop / tot_pop)
