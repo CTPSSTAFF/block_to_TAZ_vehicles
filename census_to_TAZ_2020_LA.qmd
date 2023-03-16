@@ -62,8 +62,9 @@ library(leafsync)
 #Load TAZ shapes
 TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg") %>% 
   st_transform(26986) %>% 
-  filter(STATE %in% c("MA", "RI", "NH"))# Filtering to only in MA, RI, and NH
-
+  filter(STATE %in% c("MA", "RI", "NH")) %>% # Filtering to only in MA, RI, and NH
+  filter(TAZ_TYPE == "Internal_Centroid")
+  
 TAZ$TAZ_area <- st_area(TAZ)
   #filter(ID == 4398) # Filtering for one example
 
@@ -84,10 +85,11 @@ tracts_NH <- tigris::tracts(state = "NH",
                                 year = 2020) %>% 
   st_transform(26986)
 
-tracts <- bind_rows(tracts_MA, tracts_RI, tracts_NH)
+tracts <- bind_rows(tracts_MA, tracts_RI, tracts_NH) 
 rm(tracts_MA, tracts_NH, tracts_RI)
 
 # Clip the tracts to match the geometry of the TAZ file. This will eliminate coastal waters but retain inland waters. This is a useful starting place to have a similar coast line. This will also make our `erase_water` function work on a more similar set of water.
+# Summarize() creates one shape for all of the TAZs.  When intersecting with the tracts, only the areas that intersect with the combined TAZ area remains. 
 
 tracts_nocoast <- 
   st_intersection(tracts, TAZ |> summarize()) |> 
@@ -114,7 +116,7 @@ tracts <- tracts |>
 We find the area of the census tracts. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
 
 ```{r}
-tracts$TRACT_TOTAL_AREA <- (st_area(tracts) ) 
+tracts$TRACT_TOTAL_AREA <- (st_area(tracts)) 
 ```
 
 ### Intersect Census Tracts with TAZ
@@ -161,12 +163,12 @@ ggplot(water, aes(x= ntile, y = share_of_area)) +
 
 ```{r}
 intersections_land <- tigris::erase_water(intersections, 
-                                area_threshold = 0, 
+                                area_threshold = 0.5, 
                                 year = 2020)
 
-saveRDS(intersections_land, "./data/processed/tracts/intersections_land.rds")
+saveRDS(intersections_land, "./data/processed/tracts/intersections_land_full.rds")
 
-intersections_land <- read_rds("./data/processed/tracts/intersections_land.rds")
+intersections_land <- read_rds("./data/processed/tracts/intersections_land_full.rds")
 
 ```
 
@@ -224,7 +226,7 @@ area_allocation <- area_allocation |>
   summarize(TRACT_LA_pct = sum(TRACT_LA_pct, na.rm = TRUE)) |> 
   filter(ID %in% TAZ$ID)
 
-write_csv(area_allocation, "./output/data/tracts/area_allocation_BosMPO.csv")
+write_csv(area_allocation, "./output/data/tracts/area_allocation_fullregion.csv")
 ```
 
 #### Check Results
@@ -276,48 +278,94 @@ write_csv(allocation_results, "./output/data/tracts/allocation_results_BosMPO.cs
 
 # P2_005N: Non-Hispanic/Latino, White-alone.
 # P1_001N: Total Population.
-minority_tidy <- tidycensus::get_decennial(
-  geography = "tract",
-  state = "MA",
-  variable = "P2_005N",
-  summary_var = "P1_001N",
-  year = 2020) |> 
-  select(GEOID, nonmin_pop = value, tot_pop = summary_value) |> 
-  mutate(GEOID = as.numeric(GEOID)) |>
-  mutate(min_pop = tot_pop- nonmin_pop) |>
-  select(-nonmin_pop)
+# minority_tidy <- tidycensus::get_decennial(
+#   geography = "tract",
+#   state = "MA",
+#   variable = "P2_005N",
+#   summary_var = "P1_001N",
+#   year = 2020) |> 
+#   select(GEOID, nonmin_pop = value, tot_pop = summary_value) |> 
+#   mutate(GEOID = as.numeric(GEOID)) |>
+#   mutate(min_pop = tot_pop- nonmin_pop) |>
+#   select(-nonmin_pop)
+
+minority_acs_tidy <- get_acs(geography = "tract",
+                       variable = "B03002_003",
+                       summary_var = "B03002_001", # Estimate!!Total:
+                       state= "MA",
+                       year= 2021)  %>% 
+  rename(nonmin_pop = estimate, tot_pop = summary_est, nonmin_moe = moe, tot_moe = summary_moe ) %>% 
+  select(-variable) %>% 
+  mutate(GEOID = as.numeric(GEOID))
+  
+  
+  # mutate(nonmin_pct = nonmin_pop / tot_pop, min_pct = 1 - nonmin_pct) %>% 
+  # mutate(min_moe_prop = moe_prop(nonmin_pop, tot_pop, nonmin_moe, tot_moe)) 
+  #   
+  
+
 
 # Join the population to the tracts.
+# Find the minority percentages and their moes for each TAZ
 TAZ_results <- allocation_results |> 
-  left_join(minority_tidy, by = "GEOID") %>% 
-  mutate(TRACT_LA_min = TRACT_LA_pct * min_pop) %>% 
-  mutate(TRACT_LA_tot = TRACT_LA_pct * tot_pop) %>% 
+  left_join(minority_acs_tidy, by = "GEOID") %>% 
+  # Find min and max values 
+  mutate(nonmin_minval = nonmin_pop - nonmin_moe,
+         nonmin_maxval = nonmin_pop + nonmin_moe) %>% 
+  mutate(tot_minval = tot_pop - tot_moe, 
+         tot_maxval = tot_pop + tot_moe) %>% 
+  # multiply area allocation percentages by estiamtes and moes
+  mutate(nonmin_alloc = TRACT_LA_pct * nonmin_pop, 
+         nonmin_minval_alloc = TRACT_LA_pct * nonmin_minval,
+         nonmin_maxval_alloc = TRACT_LA_pct * nonmin_maxval) %>% 
+  mutate(tot_alloc = TRACT_LA_pct * tot_pop,
+         tot_minval_alloc = TRACT_LA_pct * tot_minval,
+         tot_maxval_alloc = TRACT_LA_pct * tot_maxval) %>% 
+  mutate(nonmin_moe_alloc = TRACT_LA_pct * nonmin_moe) %>% 
+  mutate(tot_moe_alloc = TRACT_LA_pct * tot_moe)
+
+
+  # sum up estimages and moes for each TAZ
+TAZ_results_summ <- TAZ_results %>% 
   group_by(ID) %>% 
-  summarize(LA_min = sum(TRACT_LA_min, na.rm=TRUE),
-            LA_tot = sum(TRACT_LA_tot, na.rm=TRUE))
-  
+  # allocation method
+  summarize(TAZ_nonmin = sum(nonmin_alloc, na.rm=TRUE),
+            TAZ_nonmin_minval = sum(nonmin_minval_alloc, na.rm = TRUE), 
+            TAZ_nonmin_maxval = sum(nonmin_maxval_alloc, na.rm = TRUE), 
+            TAZ_tot = sum(tot_alloc, na.rm=TRUE),
+            TAZ_tot_minval = sum(tot_minval_alloc, na.rm=TRUE),
+            TAZ_tot_maxval = sum(tot_maxval_alloc, na.rm=TRUE),
+            TAZ_nonmin_moe = moe_sum(nonmin_moe_alloc, estimate = nonmin_alloc),
+            TAZ_tot_moe = moe_sum(tot_moe_alloc, estimate = tot_alloc)) %>% 
+  mutate(nonmin_pct = TAZ_nonmin / TAZ_tot, min_pct = 1 - nonmin_pct) %>%
+  select(-nonmin_pct) %>% 
+  mutate(minpct_moe = moe_prop(TAZ_nonmin, TAZ_tot, TAZ_nonmin_moe, TAZ_tot_moe))  %>% 
+  # min value method
+  mutate(nonmin_maxval_pct = TAZ_nonmin_maxval / TAZ_tot, min_minval_pct = 1 - nonmin_maxval_pct ) %>% 
+  select(-nonmin_maxval_pct) %>% 
+  mutate(minpct_moe_submethod = min_pct - min_minval_pct)
 ```
 
 ### Testing Areal-weighted Interpolation of Polygon Data
 
 ```{r}
 
-tracts$GEOID <- as.numeric(tracts$GEOID)
-
-tracts_w_min <- tracts %>% left_join(minority_tidy)
-
-tracts_land <- tigris::erase_water(tracts_w_min, 
-                                area_threshold = 0, 
-                                year = 2020)
-
-TAZ_land <- tigris::erase_water(TAZ, 
-                                area_threshold = 0, 
-                                year = 2020)
-
-new_method <- st_interpolate_aw(tracts_land, TAZ_land, extensive = TRUE)
-
-mapview(new_method, zcol = "min_pop") 
-mapview(TAZ_map, zcol = "LA_min")
+# tracts$GEOID <- as.numeric(tracts$GEOID)
+# 
+# tracts_w_min <- tracts %>% left_join(minority_tidy)
+# 
+# tracts_land <- tigris::erase_water(tracts_w_min, 
+#                                 area_threshold = 0, 
+#                                 year = 2020)
+# 
+# TAZ_land <- tigris::erase_water(TAZ, 
+#                                 area_threshold = 0, 
+#                                 year = 2020)
+# 
+# new_method <- st_interpolate_aw(tracts_land, TAZ_land, extensive = TRUE)
+# 
+# mapview(new_method, zcol = "min_pop") 
+# mapview(TAZ_map, zcol = "LA_min")
 ```
 
 ### Testing
