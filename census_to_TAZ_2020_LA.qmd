@@ -52,6 +52,7 @@ library(rgeos)
 library(sp)
 library(mapview)
 library(leafsync)
+library(ggplot2)
 ```
 
 ## Load Census and TAZ
@@ -328,6 +329,93 @@ TAZ_results_summ <- TAZ_results %>%
                                    " ± ", 
                                    scales::percent(min_pct_moe, 0.1)))
 
+```
+
+### Testing VRE Method for Finding Margin of Error
+
+```{r}
+
+# VRE tables downloaded from https://www2.census.gov/programs-surveys/acs/replicate_estimates/2021/data/5-year/140/
+# B03002_25.csv: 25 is for MA
+
+VRE_table <- read_csv("data/base/B03002_25.csv") %>% 
+  filter(ORDER %in% c(1,3)) %>% 
+  select(GEOID, ORDER, ESTIMATE, starts_with("Var_Rep"))
+
+VRE_table$GEOID <- as.numeric(str_remove_all(VRE_table$GEOID, "1400000US"))
+
+VRE_nonmin <- VRE_table %>% 
+  filter(ORDER == 3)
+
+VRE_tot <- VRE_table %>% 
+  filter(ORDER == 1)
+
+alloc <- function(x) (x * allocation_results$TRACT_LA_pct) # is allocation results right to use here?
+
+# allocation sums 
+VRE_nonmin_results <- allocation_results |> 
+  left_join(VRE_nonmin, by = "GEOID") %>% 
+  mutate(ESTIMATE = ESTIMATE * TRACT_LA_pct) %>% 
+  mutate_at(vars(matches("Var_Rep")), alloc) %>% 
+  group_by(ID) %>% 
+  summarise_at(vars(4:84), sum , na.rm = TRUE)
+
+VRE_tot_results <- allocation_results |> 
+  left_join(VRE_tot, by = "GEOID") %>% 
+  mutate(ESTIMATE = ESTIMATE * TRACT_LA_pct) %>% 
+  mutate_at(vars(matches("Var_Rep")), alloc) %>% 
+  group_by(ID) %>% 
+  summarise_at(vars(4:84), sum , na.rm = TRUE)
+
+# Differences
+diff_nonmin <- function(x) (x - VRE_nonmin_results$ESTIMATE)
+diff_tot <- function(x) (x - VRE_tot_results$ESTIMATE)
+
+square <- function(x) (x ^ 2)
+
+VRE_nonmin_diffsq <-  VRE_nonmin_results %>% 
+  mutate_at(vars(matches("Var_Rep")), diff_nonmin) %>% 
+  mutate_at(vars(matches("Var_Rep")), square) 
+  
+VRE_tot_diffsq <-  VRE_tot_results %>% 
+  mutate_at(vars(matches("Var_Rep")), diff_tot) %>% 
+  mutate_at(vars(matches("Var_Rep")), square) 
+
+# sum
+VRE_nonmin_diffsq$VRE_sum <- rowSums(VRE_nonmin_diffsq[c(3:82)], na.rm = TRUE)
+VRE_tot_diffsq$VRE_sum <- rowSums(VRE_tot_diffsq[c(3:82)], na.rm = TRUE)
+
+# Variance and MOE
+
+VRE_nonmin_var <- VRE_nonmin_diffsq %>% 
+  select(ID,EST_nonmin =  ESTIMATE, VRE_sum_nonmin = VRE_sum) %>% 
+  mutate(variance_nonmin = VRE_sum_nonmin * (4/80)) %>% 
+  mutate(MOE_nonmin = 1.645 * sqrt(variance_nonmin) )
+
+VRE_tot_var <- VRE_tot_diffsq %>% 
+  select(ID,EST_tot =  ESTIMATE, VRE_sum_tot = VRE_sum) %>% 
+  mutate(variance_tot = VRE_sum_tot * (4/80)) %>% 
+  mutate(MOE_tot = 1.645 * sqrt(variance_tot) )
+
+# Find the percent minority and moe
+VRE_combined <- VRE_nonmin_var %>% 
+  left_join(VRE_tot_var) %>% 
+  mutate(nonmin_pct = EST_nonmin / EST_tot, 
+         VRE_min_pct = 1 - nonmin_pct) %>% 
+  select(-nonmin_pct) %>%  
+  mutate(VRE_min_pct_moe = moe_prop(num = EST_nonmin, denom = EST_tot, 
+                               moe_num = MOE_nonmin, moe_denom = MOE_tot))  %>% 
+  mutate(VRE_combined_moe_pct = paste0(scales::percent(VRE_min_pct, 0.1), 
+                                   " ± ", 
+                                   scales::percent(VRE_min_pct_moe, 0.1)))
+
+# Compare with earlier method
+
+MOE_comp <- VRE_combined %>% 
+  select(ID, EST_nonmin, EST_tot, MOE_nonmin, MOE_tot, VRE_min_pct, VRE_min_pct_moe, VRE_combined_moe_pct) %>% 
+  left_join(TAZ_results_summ, by = "ID")
+
+plot(MOE_comp$VRE_min_pct_moe, MOE_comp$min_pct_moe) + plot()
 ```
 
 ### Testing Areal-weighted Interpolation of Polygon Data
