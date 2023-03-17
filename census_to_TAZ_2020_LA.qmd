@@ -415,7 +415,7 @@ MOE_comp <- VRE_combined %>%
   select(ID, EST_nonmin, EST_tot, MOE_nonmin, MOE_tot, VRE_min_pct, VRE_min_pct_moe, VRE_combined_moe_pct) %>% 
   left_join(TAZ_results_summ, by = "ID")
 
-plot(MOE_comp$VRE_min_pct_moe, MOE_comp$min_pct_moe) + plot()
+ggplot(MOE_comp, aes(x=VRE_min_pct_moe, y = min_pct_moe, size = EST_tot)) + geom_point() + coord_equal() + geom_abline(slope = 1)
 ```
 
 ### Testing Areal-weighted Interpolation of Polygon Data
