@@ -276,19 +276,6 @@ write_csv(allocation_results, "./output/data/tracts/allocation_results_BosMPO.cs
 
 # Import the census tract info for MA. 
 
-# P2_005N: Non-Hispanic/Latino, White-alone.
-# P1_001N: Total Population.
-# minority_tidy <- tidycensus::get_decennial(
-#   geography = "tract",
-#   state = "MA",
-#   variable = "P2_005N",
-#   summary_var = "P1_001N",
-#   year = 2020) |> 
-#   select(GEOID, nonmin_pop = value, tot_pop = summary_value) |> 
-#   mutate(GEOID = as.numeric(GEOID)) |>
-#   mutate(min_pop = tot_pop- nonmin_pop) |>
-#   select(-nonmin_pop)
-
 #B03002_003 | Estimate!!Total:!!Not Hispanic or Latino:!!White alone
 #B03002_001 | Estimate!!Total: HISPANIC OR LATINO ORIGIN BY RACE
 
@@ -305,28 +292,18 @@ minority_acs_tidy <- get_acs(geography = "tract",
 # Join the population to the tracts.
 # Find the minority percentages and their moes for each TAZ.
 # 
-# Note: Many of these steps could be done in any order because of how multiplication works.
+# Note: We reviewed using the boundaries of the MOEs scaled by the coverage, but
+# it had issues with values going under 0 in strange ways, the MOEs seemed smaller
+# than the moe_sum/prop methods, which seemed like an undesirable choice given
+# the other assumptions going on throughout the process. We choose the more straight
+# forward method for simplicity. 
 # 
 TAZ_results <- allocation_results |> 
   left_join(minority_acs_tidy, by = "GEOID") %>% 
-  # Find the bounds of the margins of error for each metric (90% CI).
-  mutate(nonmin_minval = nonmin_pop - nonmin_moe,
-         nonmin_maxval = nonmin_pop + nonmin_moe) %>% 
-  mutate(tot_minval = tot_pop - tot_moe, 
-         tot_maxval = tot_pop + tot_moe) %>% 
-  # Floor the values at 0. This is supported in the census docs:
-  # https://www.census.gov/content/dam/Census/library/publications/2018/acs/acs_general_handbook_2018_ch07.pdf
-  rowwise() |> 
-  mutate(across(nonmin_minval:tot_maxval, ~ max(.,0))) |> 
-  
-  # multiply area allocation percentages by estimates and moes
-  mutate(nonmin_alloc = TRACT_LA_pct * nonmin_pop, 
-         nonmin_minval_alloc = TRACT_LA_pct * nonmin_minval,
-         nonmin_maxval_alloc = TRACT_LA_pct * nonmin_maxval) %>% 
-  
-  mutate(tot_alloc = TRACT_LA_pct * tot_pop,
-         tot_minval_alloc = TRACT_LA_pct * tot_minval,
-         tot_maxval_alloc = TRACT_LA_pct * tot_maxval) %>% 
+  # multiply area allocation percentages by estimates
+  mutate(nonmin_alloc = TRACT_LA_pct * nonmin_pop,
+         tot_alloc = TRACT_LA_pct * tot_pop) %>% 
+  # and for the moes
   mutate(nonmin_moe_alloc = TRACT_LA_pct * nonmin_moe,
          tot_moe_alloc = TRACT_LA_pct * tot_moe)
 
@@ -335,22 +312,11 @@ TAZ_results <- allocation_results |>
 TAZ_results_summ <- TAZ_results %>% 
   group_by(ID) %>% 
   # allocation method
-  summarize(TAZ_nonmin =        sum(nonmin_alloc, na.rm=TRUE),
-            TAZ_nonmin_minval = sum(nonmin_minval_alloc, na.rm = TRUE), 
-            TAZ_nonmin_maxval = sum(nonmin_maxval_alloc, na.rm = TRUE), 
-            
-            TAZ_tot =        sum(tot_alloc, na.rm=TRUE),
-            TAZ_tot_minval = sum(tot_minval_alloc, na.rm=TRUE),
-            TAZ_tot_maxval = sum(tot_maxval_alloc, na.rm=TRUE),
-            
+  summarize(TAZ_nonmin = sum(nonmin_alloc, na.rm=TRUE),
+            TAZ_tot =    sum(tot_alloc, na.rm=TRUE),
+
             TAZ_nonmin_moe = moe_sum(nonmin_moe_alloc, estimate = nonmin_alloc),
             TAZ_tot_moe =    moe_sum(tot_moe_alloc, estimate = tot_alloc)) %>% 
-  
-  select(ID, 
-         TAZ_nonmin_minval, TAZ_nonmin_maxval,
-         TAZ_tot_minval, TAZ_tot_maxval,
-         TAZ_nonmin, TAZ_nonmin_moe,
-         TAZ_tot, TAZ_tot_moe) %>% 
   
   mutate(nonmin_pct = TAZ_nonmin / TAZ_tot, 
          min_pct = 1 - nonmin_pct) %>%
@@ -358,20 +324,6 @@ TAZ_results_summ <- TAZ_results %>%
   # This relies on the MOE of a P being equal to the moe of (1-P).
   mutate(min_pct_moe = moe_prop(num = TAZ_nonmin, denom = TAZ_tot, 
                                moe_num = TAZ_nonmin_moe, moe_denom = TAZ_tot_moe))  %>% 
-  
-  
-  # Boundaries Method: Uses the high-end estimates for both nonmin and tot to find
-  # the nonmin pcts, then subtracts them from 1 to find the counterparts.
-  mutate(min_pct_lowend  = (1- TAZ_nonmin_maxval / TAZ_tot_maxval),
-         min_pct_highend = (1- TAZ_nonmin_minval / TAZ_tot_minval),
-         min_pct_midpt = (min_pct_lowend + min_pct_highend) / 2,
-         min_pct_altmoe = min_pct_highend - min_pct_midpt) |> 
-    
-    # min value method
-  mutate(nonmin_maxval_pct = TAZ_nonmin_maxval / TAZ_tot,
-         min_minval_pct = 1 - nonmin_maxval_pct ) %>%
-  select(-nonmin_maxval_pct) %>%
-  mutate(minpct_moe_submethod = min_pct - min_minval_pct) |> 
   mutate(combined_moe_pct = paste0(scales::percent(min_pct, 0.1), 
                                    " ± ", 
                                    scales::percent(min_pct_moe, 0.1)))
