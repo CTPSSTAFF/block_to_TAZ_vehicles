@@ -53,6 +53,7 @@ library(sp)
 library(mapview)
 library(leafsync)
 library(ggplot2)
+library(dplyr)
 ```
 
 ## Load Census and TAZ
@@ -313,7 +314,7 @@ TAZ_results <- allocation_results |>
 TAZ_results_summ <- TAZ_results %>% 
   group_by(ID) %>% 
   # allocation method
-  summarize(TAZ_nonmin = sum(nonmin_alloc, na.rm=TRUE),
+  summarize(n = n(), TAZ_nonmin = sum(nonmin_alloc, na.rm=TRUE),
             TAZ_tot =    sum(tot_alloc, na.rm=TRUE),
 
             TAZ_nonmin_moe = moe_sum(nonmin_moe_alloc, estimate = nonmin_alloc),
@@ -416,6 +417,23 @@ MOE_comp <- VRE_combined %>%
   left_join(TAZ_results_summ, by = "ID")
 
 ggplot(MOE_comp, aes(x=VRE_min_pct_moe, y = min_pct_moe, size = EST_tot)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+
+# Finding where there are the biggest differences
+outliers <- MOE_comp %>% 
+  mutate(diff = abs(VRE_min_pct_moe - min_pct_moe)) %>% 
+  arrange(x = desc(diff)) %>% 
+  top_n(22)
+
+avg_pop_outliers <- mean(outliers$TAZ_tot)
+
+ggplot(outliers, aes(x=VRE_min_pct_moe, y = min_pct_moe, size = EST_tot)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+
+# Map
+
+delta_map <- TAZ %>% 
+  inner_join(outliers, by = "ID")
+
+mapview(delta_map, zcol = "diff")
 ```
 
 ### Testing Areal-weighted Interpolation of Polygon Data
