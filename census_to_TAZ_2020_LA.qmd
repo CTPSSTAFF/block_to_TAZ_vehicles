@@ -531,3 +531,15 @@ sync(mpct_LA, mpct_tract) # 2 panels synchronised
 Some TAZs are smaller than census block groups. Do we need to adjust the method of analysis for those cases? It could be the same. Since we are looking for the percentage of the block group that is within the TAZ, then it wouldn't matter if it is smaller or larger. In this case, it just wouldn't also be sharing area with other block groups.
 
 ![](images/image-779890944.png)
+
+Path forward: use block groups and tracts. ==
+
+Aggregate by share of estimate and share of MOE:
+1) use allocation to calculate new fields: estimate_share, moe_share, estimate_min_share, estimate_max_share
+2) use combinations of moe_sum and moe_prop from tidycensus to get to percent of taz in category X.
+3) perform basic sums for the "estimate_min,max" version
+4) repeat for tracts, blk grps
+5) Join data to TAZs
+6) Compare the four methods.
+
+Do for income and for min_status.
