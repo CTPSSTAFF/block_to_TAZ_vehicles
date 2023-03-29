@@ -61,6 +61,9 @@ library(dplyr)
 ```{r}
 #| results: hide
  
+source("Functions/Census_to_TAZ_functions.R")
+
+
 #Load TAZ shapes
 TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg") %>% 
   st_transform(26986) %>% 
@@ -70,68 +73,45 @@ TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/g
 TAZ$TAZ_area <- st_area(TAZ)
   #filter(ID == 4398) # Filtering for one example
 
-# OBtain the 2020 tracts from the tigris package.
+# OBtain the 2020 tracts and block groups from the tigris package.
 # The CB false (the more detailed) geometry looked like it matched up better, so we move forward with that path.
-tracts_MA <- tigris::tracts(state = "MA", 
-                                cb = FALSE, 
-                                year = 2020) %>% 
-  st_transform(26986)
 
-tracts_RI <- tigris::tracts(state = "RI", 
-                                cb = FALSE, 
-                                year = 2020) %>% 
-  st_transform(26986)
+tracts <- region_tracts(2020, TAZ)
+BG <- region_bg(2020, TAZ)
 
-tracts_NH <- tigris::tracts(state = "NH", 
-                                cb = FALSE, 
-                                year = 2020) %>% 
-  st_transform(26986)
+mapview(tracts)
+mapview(BG)
 
-tracts <- bind_rows(tracts_MA, tracts_RI, tracts_NH) 
-rm(tracts_MA, tracts_NH, tracts_RI)
+saveRDS(tracts, "data/processed/tracts.rds")
+saveRDS(BG, "data/processed/BG.rds")
 
-# Clip the tracts to match the geometry of the TAZ file. This will eliminate coastal waters but retain inland waters. This is a useful starting place to have a similar coast line. This will also make our `erase_water` function work on a more similar set of water.
-# Summarize() creates one shape for all of the TAZs.  When intersecting with the tracts, only the areas that intersect with the combined TAZ area remains. 
-
-tracts_nocoast <- 
-  st_intersection(tracts, TAZ |> summarize()) |> 
-  st_collection_extract("POLYGON")
-
-# Review the differences. It looks like what we'd expect. Coastal waters are not in the dataset anymore. 
-# mapview(block_groups) + 
-# mapview(block_groups_nocoast , col.regions = "orange")
-
-# Overwrite the original file with the no_coast version and clean up the workspace.
-tracts <- tracts_nocoast
-rm(tracts_nocoast)
-
-tracts <- tracts |> 
-  group_by(GEOID, ALAND, AWATER) |> 
-  summarize()
+tracts <- readRDS("data/processed/tracts.rds")
+BG <- readRDS("data/processed/BG.rds")
 
 ```
 
 ## Calculate Intersecting Areas
 
-### Find Area of Census Tracts
+### Find Area of Census Tracts/Block Groups
 
-We find the area of the census tracts. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
+We find the area of the census tracts and block groups. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
 
 ```{r}
-tracts$TRACT_TOTAL_AREA <- (st_area(tracts)) 
+tracts$TRACT_TOTAL_AREA <- (st_area(tracts))
+BG$BG_TOTAL_AREA <- (st_area(BG))
 ```
 
-### Intersect Census Tracts with TAZ
+### Intersect Census Tracts & Block Groups with TAZ
 
 ```{r}
-intersections <- st_intersection(TAZ, tracts) %>%
-  st_collection_extract("POLYGON") %>% 
-  rowid_to_column("Intersection_ID") # unique ID for each intersection geometry
+intersections_tract <- intersection_func(TAZ, geog = tracts)
+intersections_BG <- intersection_func(TAZ, geog = BG)
 
-intersections$INTERSECTION_TOTAL_AREA <- st_area(intersections)
+saveRDS(intersections_tract, "data/processed/intersect_tract.rds")
+saveRDS(intersections_BG, "data/processed/intersect_BG.rds")
 
-saveRDS(intersections, "./data/processed/tracts/intersect.rds")
-#intersections <- read_rds("./data/processed/tracts/intersect.rds")
+intersections_tract <- readRDS("data/processed/intersect_tract.rds")
+intersections_BG <- readRDS("data/processed/intersect_BG.rds")
 ```
 
 We now have the full area of the tracts and the area of the intersections.
@@ -164,13 +144,22 @@ ggplot(water, aes(x= ntile, y = share_of_area)) +
 ```
 
 ```{r}
-intersections_land <- tigris::erase_water(intersections, 
+
+intersections_tract_land <- tigris::erase_water(intersections_tract, 
                                 area_threshold = 0.5, 
                                 year = 2020)
 
-saveRDS(intersections_land, "./data/processed/tracts/intersections_land_full.rds")
+intersections_BG_land <- tigris::erase_water(intersections_BG, 
+                                area_threshold = 0.5, 
+                                year = 2020)
 
-intersections_land <- read_rds("./data/processed/tracts/intersections_land_full.rds")
+
+
+
+
+saveRDS(intersections_tract_land, "data/processed/intersections_tract_land.rds")
+saveRDS(intersections_BG_land, "data/processed/intersections_BG_land.rds")
+
 
 ```
 
