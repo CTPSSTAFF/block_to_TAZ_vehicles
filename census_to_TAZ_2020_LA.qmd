@@ -76,14 +76,15 @@ TAZ$TAZ_area <- st_area(TAZ)
 # OBtain the 2020 tracts and block groups from the tigris package.
 # The CB false (the more detailed) geometry looked like it matched up better, so we move forward with that path.
 
+# functions
 tracts <- region_tracts(2020, TAZ)
 BG <- region_bg(2020, TAZ)
 
 mapview(tracts)
 mapview(BG)
 
-saveRDS(tracts, "data/processed/tracts.rds")
-saveRDS(BG, "data/processed/BG.rds")
+# saveRDS(tracts, "data/processed/tracts.rds")
+# saveRDS(BG, "data/processed/BG.rds")
 
 tracts <- readRDS("data/processed/tracts.rds")
 BG <- readRDS("data/processed/BG.rds")
@@ -104,11 +105,12 @@ BG$BG_TOTAL_AREA <- (st_area(BG))
 ### Intersect Census Tracts & Block Groups with TAZ
 
 ```{r}
+# Intersection_func function
 intersections_tract <- intersection_func(TAZ, geog = tracts)
 intersections_BG <- intersection_func(TAZ, geog = BG)
 
-saveRDS(intersections_tract, "data/processed/intersect_tract.rds")
-saveRDS(intersections_BG, "data/processed/intersect_BG.rds")
+# saveRDS(intersections_tract, "data/processed/intersect_tract.rds")
+# saveRDS(intersections_BG, "data/processed/intersect_BG.rds")
 
 intersections_tract <- readRDS("data/processed/intersect_tract.rds")
 intersections_BG <- readRDS("data/processed/intersect_BG.rds")
@@ -146,21 +148,20 @@ ggplot(water, aes(x= ntile, y = share_of_area)) +
 ```{r}
 
 intersections_tract_land <- tigris::erase_water(intersections_tract, 
-                                area_threshold = 0.5, 
+                                area_threshold = 0.8, 
                                 year = 2020)
 
 intersections_BG_land <- tigris::erase_water(intersections_BG, 
-                                area_threshold = 0.5, 
+                                area_threshold = 0.8, 
                                 year = 2020)
 
 
 
+# saveRDS(intersections_tract_land, "data/processed/intersections_tract_land.rds")
+# saveRDS(intersections_BG_land, "data/processed/intersections_BG_land.rds")
 
-
-saveRDS(intersections_tract_land, "data/processed/intersections_tract_land.rds")
-saveRDS(intersections_BG_land, "data/processed/intersections_BG_land.rds")
-
-
+intersections_tract_land <- readRDS("data/processed/intersections_tract_land.rds")
+intersections_BG_land <- readRDS("data/processed/intersections_BG_land.rds")
 ```
 
 ### Recalculate Land Area for the Intersections
@@ -168,56 +169,96 @@ saveRDS(intersections_BG_land, "data/processed/intersections_BG_land.rds")
 We can now recalculate the area to obtain the land area by intersection.
 
 ```{r}
-intersections_land$INTERSECTION_LAND_AREA <- st_area(intersections_land)
+# tract
+intersections_tract_land$INTERSECTION_LAND_AREA <- st_area(intersections_tract_land)
+
+# bg
+intersections_BG_land$INTERSECTION_LAND_AREA <- st_area(intersections_BG_land)
 ```
 
-### Find Total Land Area for Census Tracts
+### Find Total Land Area for Census Tracts / Block Group
 
 ```{r}
-intersections_land <- intersections_land %>% 
+# tract
+intersections_tract_land <- intersections_tract_land %>% 
   group_by(GEOID) %>% #grouping by tract
   mutate(TRACT_LAND_AREA = sum(INTERSECTION_LAND_AREA))
+
+# bg
+intersections_BG_land <- intersections_BG_land %>% 
+  group_by(GEOID) %>% #grouping by BG
+  mutate(BG_LAND_AREA = sum(INTERSECTION_LAND_AREA))
 ```
 
-For each intersection area we now have the land area and the full area of the tract and the land area of the tract.
+For each intersection area we now have the land area and the full area of the tract/BG and the land area of the tract/BG.
 
 ### Rejoin to initial intersection dataset
 
 Bring the full dataset back together. We need to join back to the original intersection to maintain all of the "full area". Some of the areas disappear after water is removed. Without these the areas are not fully accounted for.
 
 ```{r}
-intersections_for_alloc <- intersections |>
+
+# tract
+intersections_for_alloc_tract <- intersections_tract |>
   st_drop_geometry() |>
   select(Intersection_ID, ID, GEOID, 
          INTERSECTION_TOTAL_AREA, TRACT_TOTAL_AREA) |>
   left_join(
-    intersections_land |> 
+    intersections_tract_land |> 
       st_drop_geometry() |> 
       select(Intersection_ID, ID, GEOID, 
              INTERSECTION_LAND_AREA, TRACT_LAND_AREA),
     by = c("Intersection_ID", "ID", "GEOID")) 
+
+# Note: there are instances where the intersection total area is less than than the intersection land area
+
+# bg
+intersections_for_alloc_BG <- intersections_BG |>
+  st_drop_geometry() |>
+  select(Intersection_ID, ID, GEOID, 
+         INTERSECTION_TOTAL_AREA, BG_TOTAL_AREA) |>
+  left_join(
+    intersections_BG_land |> 
+      st_drop_geometry() |> 
+      select(Intersection_ID, ID, GEOID, 
+             INTERSECTION_LAND_AREA, BG_LAND_AREA),
+    by = c("Intersection_ID", "ID", "GEOID"))
+
 ```
 
-## Allocate Tracts to TAZs
+## Allocate Tracts/Block Groups to TAZs
 
 ### Allocate based on Area
 
-This calculated the relationship between tracts and TAZs based on land area (LA) and full area (FA). The full area method does have coastal waters stripped away.
+This calculated the relationship between tracts/block groups and TAZs based on land area (LA) and full area (FA). The full area method does have coastal waters stripped away.
 
 ```{r}
-area_allocation <- intersections_for_alloc |> 
+
+# tract
+area_allocation_tract <- intersections_for_alloc_tract |> 
   group_by(GEOID) |> 
     mutate(TRACT_LA_pct = 
              drop_units(INTERSECTION_LAND_AREA / TRACT_LAND_AREA)) |> 
   select(Intersection_ID, ID, GEOID, 
-         TRACT_LA_pct)
-
-area_allocation <- area_allocation |> 
+         TRACT_LA_pct) |> 
   group_by(GEOID, ID) |> 
   summarize(TRACT_LA_pct = sum(TRACT_LA_pct, na.rm = TRUE)) |> 
   filter(ID %in% TAZ$ID)
 
-write_csv(area_allocation, "./output/data/tracts/area_allocation_fullregion.csv")
+
+# bg
+area_allocation_BG <- intersections_for_alloc_BG |> 
+  group_by(GEOID) |> 
+    mutate(BG_LA_pct = 
+             drop_units(INTERSECTION_LAND_AREA / BG_LAND_AREA)) |> 
+  select(Intersection_ID, ID, GEOID, 
+         BG_LA_pct) |> 
+  group_by(GEOID, ID) |> 
+  summarize(BG_LA_pct = sum(BG_LA_pct, na.rm = TRUE)) |> 
+  filter(ID %in% TAZ$ID)
+
+write_csv(area_allocation_tract, "output/data/area_allocation_tract.csv")
+write_csv(area_allocation_BG, "output/data/area_allocation_BG.csv")
 ```
 
 #### Check Results
@@ -225,14 +266,23 @@ write_csv(area_allocation, "./output/data/tracts/area_allocation_fullregion.csv"
 We want to verify that we have maintained area. We want 100% of the area accounted for. This may be not as true now that we've included extra buffer area. We may want 100% of the area included for the TAZs inside the MPO boundary.
 
 ```{r}
-flag <- area_allocation |> 
+
+# tract
+flag_tract <- area_allocation_tract |> 
   group_by(GEOID) |> 
   summarize(tot_LA_in_tract = sum(TRACT_LA_pct, na.rm = TRUE)) |>
   ungroup() |> 
   filter(tot_LA_in_tract < 0.999)
+
+# bg
+flag_BG <- area_allocation_BG |> 
+  group_by(GEOID) |> 
+  summarize(tot_LA_in_BG = sum(BG_LA_pct, na.rm = TRUE)) |>
+  ungroup() |> 
+  filter(tot_LA_in_BG < 0.999)
 ```
 
-There are two land_area values that are equal to `0`, rather than `1`. These are: 25009990100 and 25025990101. Neither of these have any land area at all--they are water-only tracts. At a glance, the remaining appear to be associated with the border or otherwise excluding some piece of geometry outside the MPO.
+There are three land_area values that are equal to `0`, rather than `1`. T
 
 ##### Explore Areas
 
@@ -257,28 +307,35 @@ mapview(TAZ |>
 ## Finding TAZ Results
 
 ```{r}
-area <- read_csv("./output/data/tracts/area_allocation_BosMPO.csv",
+
+# tract
+area_tracts <- read_csv("output/data/area_allocation_tract.csv",
                  show_col_types = FALSE)
 
-allocation_results <- area %>%
+allocation_results_tracts <- area_tracts %>%
   filter(ID %in% TAZ$ID)
+write_csv(allocation_results_tracts, "output/data/allocation_results_tract.csv")
 
-write_csv(allocation_results, "./output/data/tracts/allocation_results_BosMPO.csv")
+
+# bg
+area_BG <- read_csv("output/data/area_allocation_BG.csv",
+                 show_col_types = FALSE)
+
+allocation_results_BG <- area_BG %>%
+  filter(ID %in% TAZ$ID)
+write_csv(allocation_results_BG, "output/data/allocation_results_BG.csv")
+
+# Note: I don't think the above does anything
+
+
 
 # Import the census tract info for MA. 
 
-#B03002_003 | Estimate!!Total:!!Not Hispanic or Latino:!!White alone
-#B03002_001 | Estimate!!Total: HISPANIC OR LATINO ORIGIN BY RACE
+# min_data function
+minority_acs_tract <- min_data("tract")
+minority_acs_BG <- min_data("block group")
 
-minority_acs_tidy <- get_acs(geography = "tract",
-                       variable = "B03002_003", 
-                       summary_var = "B03002_001", 
-                       state= c("MA"), # prep for adding states
-                       year= 2021)  %>% 
-  rename(nonmin_pop = estimate, tot_pop = summary_est, 
-         nonmin_moe = moe, tot_moe = summary_moe ) %>% 
-  select(-variable) %>% 
-  mutate(GEOID = as.numeric(GEOID))
+
 
 # Join the population to the tracts.
 # Find the minority percentages and their moes for each TAZ.
@@ -288,9 +345,10 @@ minority_acs_tidy <- get_acs(geography = "tract",
 # than the moe_sum/prop methods, which seemed like an undesirable choice given
 # the other assumptions going on throughout the process. We choose the more straight
 # forward method for simplicity. 
-# 
-TAZ_results <- allocation_results |> 
-  left_join(minority_acs_tidy, by = "GEOID") %>% 
+
+# tract
+TAZ_results_tract <- allocation_results_tracts |> 
+  left_join(minority_acs_tract, by = "GEOID") %>% 
   # multiply area allocation percentages by estimates
   mutate(nonmin_alloc = TRACT_LA_pct * nonmin_pop,
          tot_alloc = TRACT_LA_pct * tot_pop) %>% 
@@ -298,27 +356,22 @@ TAZ_results <- allocation_results |>
   mutate(nonmin_moe_alloc = TRACT_LA_pct * nonmin_moe,
          tot_moe_alloc = TRACT_LA_pct * tot_moe)
 
+# bg
+TAZ_results_BG <- allocation_results_BG |> 
+  left_join(minority_acs_BG, by = "GEOID") %>% 
+  # multiply area allocation percentages by estimates
+  mutate(nonmin_alloc = BG_LA_pct * nonmin_pop,
+         tot_alloc = BG_LA_pct * tot_pop) %>% 
+  # and for the moes
+  mutate(nonmin_moe_alloc = BG_LA_pct * nonmin_moe,
+         tot_moe_alloc = BG_LA_pct * tot_moe)
 
-  # sum up estimates and moes for each TAZ
-TAZ_results_summ <- TAZ_results %>% 
-  group_by(ID) %>% 
-  # allocation method
-  summarize(n = n(), TAZ_nonmin = sum(nonmin_alloc, na.rm=TRUE),
-            TAZ_tot =    sum(tot_alloc, na.rm=TRUE),
 
-            TAZ_nonmin_moe = moe_sum(nonmin_moe_alloc, estimate = nonmin_alloc),
-            TAZ_tot_moe =    moe_sum(tot_moe_alloc, estimate = tot_alloc)) %>% 
-  
-  mutate(nonmin_pct = TAZ_nonmin / TAZ_tot, 
-         min_pct = 1 - nonmin_pct) %>%
-  select(-nonmin_pct) %>% 
-  # This relies on the MOE of a P being equal to the moe of (1-P).
-  mutate(min_pct_moe = moe_prop(num = TAZ_nonmin, denom = TAZ_tot, 
-                               moe_num = TAZ_nonmin_moe, moe_denom = TAZ_tot_moe))  %>% 
-  mutate(combined_moe_pct = paste0(scales::percent(min_pct, 0.1), 
-                                   " ± ", 
-                                   scales::percent(min_pct_moe, 0.1)))
+# sum up estimates and moes for each TAZ
+TAZ_results_summ_tract <- results_summ(TAZ_results_tract)
+TAZ_results_summ_BG <- results_summ(TAZ_results_BG)
 
+plot(TAZ_results_summ_tract$min_pct, TAZ_results_summ_BG$min_pct)
 ```
 
 ### Testing VRE Method for Finding Margin of Error
