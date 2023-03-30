@@ -372,6 +372,8 @@ TAZ_results_summ_tract <- results_summ(TAZ_results_tract)
 TAZ_results_summ_BG <- results_summ(TAZ_results_BG)
 
 plot(TAZ_results_summ_tract$min_pct, TAZ_results_summ_BG$min_pct)
+
+ggplot(data = data.frame(x = TAZ_results_summ_tract$min_pct, y = TAZ_results_summ_BG$min_pct), aes(x = x, y = y)) + geom_point(alpha = 0.2) + coord_equal() + labs(x = "tract", y = "bg")+ geom_abline( slope=1, color = "red")
 ```
 
 ### Testing VRE Method for Finding Margin of Error
