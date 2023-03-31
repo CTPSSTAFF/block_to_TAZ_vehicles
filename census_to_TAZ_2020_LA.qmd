@@ -374,6 +374,20 @@ TAZ_results_summ_BG <- results_summ(TAZ_results_BG)
 plot(TAZ_results_summ_tract$min_pct, TAZ_results_summ_BG$min_pct)
 
 ggplot(data = data.frame(x = TAZ_results_summ_tract$min_pct, y = TAZ_results_summ_BG$min_pct), aes(x = x, y = y)) + geom_point(alpha = 0.2) + coord_equal() + labs(x = "tract", y = "bg")+ geom_abline( slope=1, color = "red")
+
+min_comp <- TAZ_results_summ_tract %>% 
+  select(ID, tract = min_pct) %>% 
+  left_join(TAZ_results_summ_BG, by = "ID") %>% 
+  rename(BG = min_pct) %>% 
+  select(ID, tract, BG)
+
+
+
+library(GGally)
+ggpairs(min_comp, title="Correlogram For Min Pct") 
+
+
+
 ```
 
 ### Testing VRE Method for Finding Margin of Error
@@ -548,23 +562,34 @@ percentages <- percentages_ID %>%
 
 ```{r}
 
+# TAZ results
 TAZ_map <- TAZ %>% 
-  left_join(percentages_ID) %>% 
-  left_join(TAZ_results)
+  left_join(min_comp) 
 
 
+# census data
 tract_map <- tracts %>% 
   mutate(GEOID = as.numeric(GEOID)) %>% 
-  left_join(minority_tidy) %>% 
-  mutate(pct_min = 100 * min_pop / tot_pop)
+  left_join(minority_acs_tract) %>% 
+  mutate(pct_min = 1 -  nonmin_pop / tot_pop)
 
+
+BG_map <- BG %>% 
+  mutate(GEOID = as.numeric(GEOID)) %>% 
+  left_join(minority_acs_BG) %>% 
+  mutate(pct_min = 1 -  nonmin_pop / tot_pop)
 
 
 # Minority Percent
-mpct_LA <- mapview(TAZ_map, zcol = "LA_pct_min", at = seq(0,100,20), lwd = 0, legend = TRUE)
-mpct_tract <- mapview(tract_map, zcol = "pct_min", at = seq(0,100,20),lwd = 0, legend = FALSE)
+TAZ_tract <- mapview(TAZ_map, zcol = "tract", at = seq(0,1, .2), lwd = 0, legend = TRUE)
+TAZ_BG <- mapview(TAZ_map, zcol = "BG", at = seq(0,1, .2), lwd = 0, legend = TRUE)
 
-sync(mpct_LA, mpct_tract) # 2 panels synchronised
+mpct_tract <- mapview(tract_map, zcol = "pct_min", at = seq(0,1,0.2),lwd = 0, legend = FALSE)
+mpct_BG<- mapview(BG_map, zcol = "pct_min", at = seq(0,1,0.2),lwd = 0, legend = FALSE)
+
+
+
+sync(TAZ_tract, TAZ_BG, mpct_tract, mpct_BG) # 4 panels synchronised
 
 ```
 
