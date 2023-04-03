@@ -117,6 +117,34 @@ min_data <- function(geog) {
   return(min)
 }
 
+inc_data <- function(geog) {
+  
+  # C17002_001 Estimate!!Total: RATIO OF INCOME TO POVERTY LEVEL IN THE PAST 12 MONTHS
+  # C17002_008 Estimate!!Total:!!2.00 and over RATIO OF INCOME TO POVERTY LEVEL IN THE PAST 12 MONTHS
+  inc_acs <- paste0("C17002_", str_pad(c(1:8), width = 3, side = "left", pad = 0))
+  names(inc_acs)<- c("total_pop", rep("lowinc",6), "nonlowinc")
+  
+  
+  acs_inc_raw <- get_acs(geography = census_geog,
+                         variables = inc_acs,
+                         state = state,
+                         geometry = F,
+                         year = year_acs)
+  inc_acs <- acs_inc_raw %>% 
+    group_by(GEOID, variable) %>% 
+    summarise(est= sum(estimate),
+              moe = moe_sum(moe, est)) %>%
+    pivot_wider(id_cols = GEOID, names_from= variable, values_from = c(est, moe)) %>% 
+    mutate(percent_lowinc = ifelse(est_total_pop == 0, NA, est_lowinc/est_total_pop),
+           percent_lowinc_moe = moe_prop(est_lowinc, est_total_pop, moe_lowinc, moe_total_pop),
+           percent_nonlowinc =ifelse(est_total_pop == 0, NA, est_nonlowinc /est_total_pop),
+           percent_nonlowinc_moe = moe_prop(est_nonlowinc, est_total_pop, moe_nonlowinc, moe_total_pop)) %>% 
+    select(GEOID, starts_with("percent_"))
+  
+
+}
+
+
 
 # TAZ RESULTS SUMMARY ####
 

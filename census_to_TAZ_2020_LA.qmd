@@ -376,11 +376,19 @@ plot(TAZ_results_summ_tract$min_pct, TAZ_results_summ_BG$min_pct)
 ggplot(data = data.frame(x = TAZ_results_summ_tract$min_pct, y = TAZ_results_summ_BG$min_pct), aes(x = x, y = y)) + geom_point(alpha = 0.2) + coord_equal() + labs(x = "tract", y = "bg")+ geom_abline( slope=1, color = "red")
 
 min_comp <- TAZ_results_summ_tract %>% 
-  select(ID, tract = min_pct) %>% 
+  select(ID, tract_nonmin = TAZ_nonmin, tract_tot = TAZ_tot, tract_min_pct = min_pct) %>% 
   left_join(TAZ_results_summ_BG, by = "ID") %>% 
-  rename(BG = min_pct) %>% 
-  select(ID, tract, BG)
+  rename(BG_min_pct = min_pct, BG_nonmin = TAZ_nonmin, BG_tot = TAZ_tot) %>% 
+  select(-c(n, TAZ_nonmin_moe, TAZ_tot_moe, min_pct_moe, combined_moe_pct)) %>% 
+  mutate(diff = abs(tract - BG))
 
+outliers <- TAZ %>% 
+  left_join(min_comp, by = "ID") %>% 
+  filter(diff > 0.2)
+ 
+mapview(outliers, zcol = "diff") + mapview(tracts) + mapview(BG)
+
+ggplot(data = data.frame(x = min_comp$tract_tot, y = min_comp$BG_tot), aes(x = x, y = y)) + geom_point(alpha = 0.2) + coord_equal() + labs(x = "tract", y = "bg")+ geom_abline( slope=1, color = "red")
 
 
 library(GGally)
