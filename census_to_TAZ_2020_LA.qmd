@@ -380,7 +380,9 @@ min_comp <- TAZ_results_summ_tract %>%
   left_join(TAZ_results_summ_BG, by = "ID") %>% 
   rename(BG_min_pct = min_pct, BG_nonmin = TAZ_nonmin, BG_tot = TAZ_tot) %>% 
   select(-c(n, TAZ_nonmin_moe, TAZ_tot_moe, min_pct_moe, combined_moe_pct)) %>% 
-  mutate(diff = abs(tract - BG))
+  mutate(diff_minpct = abs(tract_min_pct - BG_min_pct ))
+
+write_csv(min_comp, "output/data/minority_comparison.csv")
 
 outliers <- TAZ %>% 
   left_join(min_comp, by = "ID") %>% 
