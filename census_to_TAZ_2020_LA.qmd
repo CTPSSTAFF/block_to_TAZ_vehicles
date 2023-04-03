@@ -387,6 +387,15 @@ write_csv(min_comp, "output/data/minority_comparison.csv")
 outliers <- TAZ %>% 
   left_join(min_comp, by = "ID") %>% 
   filter(diff > 0.2)
+
+tract_outliers <- TAZ_results_tract %>% 
+  filter(ID %in% outliers$ID)
+BG_outliers <- TAZ_results_BG %>% 
+  filter(ID %in% outliers$ID)
+
+write_csv(tract_outliers, "output/data/tract_outliers.csv")
+write_csv(BG_outliers, "output/data/BG_outliers.csv")
+
  
 mapview(outliers, zcol = "diff") + mapview(tracts) + mapview(BG)
 
