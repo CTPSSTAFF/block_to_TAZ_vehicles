@@ -380,9 +380,10 @@ sync(TAZ_min, minpct_tract) # 2 panels synchronised
 
 
 # lowinc percent
+TAZ_lowinc <- mapview(TAZ_inc_map, zcol = "lowinc_pct", at = seq(0,1, .2), lwd = 0, legend = TRUE)
+lowinc_pct_tract <- mapview(tract_inc_map, zcol = "pct_lowinc", at = seq(0,1,0.2),lwd = 0, legend = FALSE)
 
-
-
+sync(TAZ_lowinc, lowinc_pct_tract) # 2 panels synchronised
 
 
 
