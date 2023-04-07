@@ -386,6 +386,8 @@ lowinc_pct_tract <- mapview(tract_inc_map, zcol = "pct_lowinc", at = seq(0,1,0.2
 sync(TAZ_lowinc, lowinc_pct_tract) # 2 panels synchronised
 
 
+saveRDS(TAZ_min_map)
+
 
 ```
 
