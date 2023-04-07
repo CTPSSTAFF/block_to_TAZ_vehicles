@@ -121,34 +121,31 @@ inc_data <- function(geog) {
   
   # C17002_001 Estimate!!Total: RATIO OF INCOME TO POVERTY LEVEL IN THE PAST 12 MONTHS
   # C17002_008 Estimate!!Total:!!2.00 and over RATIO OF INCOME TO POVERTY LEVEL IN THE PAST 12 MONTHS
-  inc_acs <- paste0("C17002_", str_pad(c(1:8), width = 3, side = "left", pad = 0))
-  names(inc_acs)<- c("total_pop", rep("lowinc",6), "nonlowinc")
+  inc_acs <- paste0("C17002_", str_pad(c(1,8), width = 3, side = "left", pad = 0))
+  names(inc_acs)<- c("total", "nonlowinc")
   
   
-  acs_inc_raw <- get_acs(geography = census_geog,
+  acs_inc_raw <- get_acs(geography = geog,
                          variables = inc_acs,
-                         state = state,
+                         state = c("MA", "RI", "NH"),
                          geometry = F,
-                         year = year_acs)
+                         year = 2021)
+  
   inc_acs <- acs_inc_raw %>% 
     group_by(GEOID, variable) %>% 
     summarise(est= sum(estimate),
               moe = moe_sum(moe, est)) %>%
-    pivot_wider(id_cols = GEOID, names_from= variable, values_from = c(est, moe)) %>% 
-    mutate(percent_lowinc = ifelse(est_total_pop == 0, NA, est_lowinc/est_total_pop),
-           percent_lowinc_moe = moe_prop(est_lowinc, est_total_pop, moe_lowinc, moe_total_pop),
-           percent_nonlowinc =ifelse(est_total_pop == 0, NA, est_nonlowinc /est_total_pop),
-           percent_nonlowinc_moe = moe_prop(est_nonlowinc, est_total_pop, moe_nonlowinc, moe_total_pop)) %>% 
-    select(GEOID, starts_with("percent_"))
+    pivot_wider(id_cols = GEOID, names_from= variable, values_from = c(est, moe)) 
   
-
+  
+  return(inc_acs)
 }
 
 
 
 # TAZ RESULTS SUMMARY ####
 
-results_summ <- function(TAZ_results) {
+results_min <- function(TAZ_results) {
   
   TAZ_results_summ <- TAZ_results %>% 
     group_by(ID) %>% 
@@ -167,6 +164,30 @@ results_summ <- function(TAZ_results) {
     mutate(combined_moe_pct = paste0(scales::percent(min_pct, 0.1), 
                                      " ± ", 
                                      scales::percent(min_pct_moe, 0.1)))
+  
+  return(TAZ_results_summ)
+  
+}
+
+results_inc <- function(TAZ_results) {
+  
+  TAZ_results_summ <- TAZ_results %>% 
+    group_by(ID) %>% 
+    # allocation method
+    summarize(n = n(), TAZ_non_lowinc = sum(non_lowinc_alloc, na.rm=TRUE),
+              TAZ_tot = sum(tot_alloc, na.rm=TRUE),
+              
+              TAZ_non_lowinc_moe = moe_sum(non_lowinc_moe_alloc, estimate = non_lowinc_alloc),
+              TAZ_tot_moe =    moe_sum(tot_moe_alloc, estimate = tot_alloc)) %>% 
+    mutate(non_lowinc_pct = TAZ_non_lowinc / TAZ_tot, 
+           lowinc_pct = 1 - non_lowinc_pct) %>%
+    select(-non_lowinc_pct) %>% 
+    # This relies on the MOE of a P being equal to the moe of (1-P).
+    mutate(lowinc_pct_moe = moe_prop(num = TAZ_non_lowinc, denom = TAZ_tot, 
+                                  moe_num = TAZ_non_lowinc_moe, moe_denom = TAZ_tot_moe))  %>% 
+    mutate(combined_moe_pct = paste0(scales::percent(lowinc_pct, 0.1), 
+                                     " ± ", 
+                                     scales::percent(lowinc_pct_moe, 0.1)))
   
   return(TAZ_results_summ)
   
