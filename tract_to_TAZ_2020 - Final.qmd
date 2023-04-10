@@ -420,6 +420,9 @@ grid_inc_tract <- st_intersection(x = tract_inc_map, y = grid ) %>%
 
 inc_comp <- st_join(grid_inc_TAZ, grid_inc_tract) %>% 
   mutate(in_CI = TAZ_lowinc_pct + TAZ_lowinc_pct_moe >= tract_pct_lowinc & TAZ_lowinc_pct - TAZ_lowinc_pct_moe <= tract_pct_lowinc)
+
+ggplot(inc_comp, aes(x=TAZ_lowinc_pct, y = tract_pct_lowinc)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+
 ```
 
 ## Trailing Thoughts
