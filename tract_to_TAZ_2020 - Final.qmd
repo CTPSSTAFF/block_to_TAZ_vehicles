@@ -392,6 +392,36 @@ saveRDS(TAZ_inc_map, "Output/data/FINAL/TAZ_lowincome.rds")
 
 ```
 
+## Testing with Grid Points
+
+```{r}
+
+grid <- st_make_grid(TAZ_min_map, what = "centers",  n = c(40, 40), crs = 26986) 
+mapview(grid[tract_min_map])+ mapview(tract_min_map, col.regions = "red")
+
+# minority
+grid_min_TAZ <- st_intersection(x = TAZ_min_map, y = grid ) %>% 
+  select(TAZ_min_pct = min_pct, TAZ_min_pct_moe = min_pct_moe)
+grid_min_tract <- st_intersection(x = tract_min_map, y = grid ) %>% 
+  select(tract_pct_min = pct_min)
+
+min_comp <- st_join(grid_min_TAZ, grid_min_tract) %>% 
+  mutate(in_CI = TAZ_min_pct + TAZ_min_pct_moe >= tract_pct_min & TAZ_min_pct - TAZ_min_pct_moe <= tract_pct_min )
+
+
+ggplot(min_comp, aes(x=TAZ_min_pct, y = tract_pct_min)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+
+
+# low-income
+grid_inc_TAZ <- st_intersection(x = TAZ_inc_map, y = grid ) %>% 
+  select(TAZ_lowinc_pct = lowinc_pct, TAZ_lowinc_pct_moe = lowinc_pct_moe)
+grid_inc_tract <- st_intersection(x = tract_inc_map, y = grid ) %>% 
+  select(tract_pct_lowinc = pct_lowinc)
+
+inc_comp <- st_join(grid_inc_TAZ, grid_inc_tract) %>% 
+  mutate(in_CI = TAZ_lowinc_pct + TAZ_lowinc_pct_moe >= tract_pct_lowinc & TAZ_lowinc_pct - TAZ_lowinc_pct_moe <= tract_pct_lowinc)
+```
+
 ## Trailing Thoughts
 
 ### Thoughts:
