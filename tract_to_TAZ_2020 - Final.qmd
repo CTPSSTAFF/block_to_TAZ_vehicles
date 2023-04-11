@@ -274,8 +274,6 @@ allocation_results_tracts <- area_tracts %>%
   filter(ID %in% TAZ$ID)
 write_csv(allocation_results_tracts, "output/data/allocation_results_tract.csv")
 
-
-
 # Note: I don't think the above does anything
 
 
@@ -288,6 +286,9 @@ minority_acs_tract <- min_data("tract")
 # inc data function
 lowinc_acs_tract <- inc_data("tract")
 lowinc_acs_tract$GEOID <- as.numeric(lowinc_acs_tract$GEOID)
+
+# pop data function
+total_dec_tract <- pop_data("tract") 
 
 # Join the population to the tracts.
 # Find the minority percentages and their moes for each TAZ.
@@ -317,12 +318,17 @@ TAZ_results_inc <- allocation_results_tracts |>
   mutate(non_lowinc_moe_alloc = TRACT_LA_pct * moe_nonlowinc,
          tot_moe_alloc = TRACT_LA_pct * moe_total)
   
+# total pop
+TAZ_results_pop <- allocation_results_tracts |> 
+  left_join(total_dec_tract, by = "GEOID") %>% 
+  # multiply area allocation percentages by estimates
+  mutate(pop_dec_alloc = TRACT_LA_pct * pop_dec)
 
 
 # sum up estimates and moes for each TAZ
 TAZ_results_summ_min <- results_min(TAZ_results_min)
 TAZ_results_summ_inc <- results_inc(TAZ_results_inc)
-
+TAZ_results_summ_pop <- results_pop(TAZ_results_pop)
 
 
 
@@ -358,6 +364,9 @@ TAZ_min_map <- TAZ %>%
 TAZ_inc_map <- TAZ %>% 
   left_join(TAZ_results_summ_inc)
 
+TAZ_pop_map <- TAZ %>% 
+  left_join(TAZ_results_summ_pop)
+
 
 # census data
 tract_min_map <- tracts %>% 
@@ -370,7 +379,9 @@ tract_inc_map <- tracts %>%
   left_join(lowinc_acs_tract) %>% 
   mutate(pct_lowinc = 1 -  est_nonlowinc / est_total)
   
-
+tract_pop_map <- tracts %>% 
+  mutate(GEOID = as.numeric(GEOID)) %>% 
+  left_join(total_dec_tract) 
 
 # Minority Percent
 TAZ_min <- mapview(TAZ_min_map, zcol = "min_pct", at = seq(0,1, .2), lwd = 0, legend = TRUE)
@@ -386,9 +397,25 @@ lowinc_pct_tract <- mapview(tract_inc_map, zcol = "pct_lowinc", at = seq(0,1,0.2
 sync(TAZ_lowinc, lowinc_pct_tract) # 2 panels synchronised
 
 
+# total pop
+TAZ_pop_dec <- mapview(TAZ_pop_map, zcol = "TAZ_pop_dec", at = seq(0,14000,2800), lwd = 0, legend = FALSE)
+pop_dec_tract <- mapview(tract_pop_map, zcol = "pop_dec", at = seq(0,14000,2800), lwd = 0, legend = FALSE)
+
+sync(TAZ_pop_dec, pop_dec_tract) # 2 panels synchronised
+
+
 saveRDS(TAZ_min_map, "Output/data/FINAL/TAZ_minority.rds")
 saveRDS(TAZ_inc_map, "Output/data/FINAL/TAZ_lowincome.rds")
 
+
+```
+
+```{r}
+
+TAZ_lowinc2 <- mapview(TAZ_inc_map, zcol = "TAZ_tot",  lwd = 0, at = seq(0,14000,2800), legend = TRUE)
+lowinc_pct_tract2 <- mapview(tract_inc_map, zcol = "est_total", lwd = 0, at = seq(0,14000,2800), legend = FALSE)
+
+sync(TAZ_lowinc2, lowinc_pct_tract2) # 2 panels synchronised
 
 ```
 
@@ -396,8 +423,8 @@ saveRDS(TAZ_inc_map, "Output/data/FINAL/TAZ_lowincome.rds")
 
 ```{r}
 
-grid <- st_make_grid(TAZ_min_map, what = "centers",  n = c(40, 40), crs = 26986) 
-mapview(grid[tract_min_map])+ mapview(tract_min_map, col.regions = "red")
+grid <- st_make_grid(TAZ_min_map, what = "centers",  n = c(100, 100), crs = 26986) 
+mapview(grid[tract_pop_map])+ mapview(tract_pop_map, col.regions = "red")
 
 # minority
 grid_min_TAZ <- st_intersection(x = TAZ_min_map, y = grid ) %>% 
@@ -409,7 +436,7 @@ min_comp <- st_join(grid_min_TAZ, grid_min_tract) %>%
   mutate(in_CI = TAZ_min_pct + TAZ_min_pct_moe >= tract_pct_min & TAZ_min_pct - TAZ_min_pct_moe <= tract_pct_min )
 
 
-ggplot(min_comp, aes(x=TAZ_min_pct, y = tract_pct_min)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+ggplot(min_comp, aes(x=TAZ_min_pct, y = tract_pct_min, color = in_CI)) + geom_point() + coord_equal() + geom_abline(slope = 1)
 
 
 # low-income
@@ -421,8 +448,18 @@ grid_inc_tract <- st_intersection(x = tract_inc_map, y = grid ) %>%
 inc_comp <- st_join(grid_inc_TAZ, grid_inc_tract) %>% 
   mutate(in_CI = TAZ_lowinc_pct + TAZ_lowinc_pct_moe >= tract_pct_lowinc & TAZ_lowinc_pct - TAZ_lowinc_pct_moe <= tract_pct_lowinc)
 
-ggplot(inc_comp, aes(x=TAZ_lowinc_pct, y = tract_pct_lowinc)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+ggplot(inc_comp, aes(x=TAZ_lowinc_pct, y = tract_pct_lowinc, color = in_CI)) + geom_point() + coord_equal() + geom_abline(slope = 1)
 
+
+# total pop
+grid_pop_TAZ <- st_intersection(x = TAZ_pop_map, y = grid) 
+grid_pop_tract <- st_intersection(x = tract_pop_map, y = grid) %>% 
+  select(tract_pop_dec = pop_dec)
+  
+pop_comp <- st_join(grid_pop_TAZ, grid_pop_tract) 
+ggplot(pop_comp, aes(x = TAZ_pop_dec, y = tract_pop_dec)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+
+  
 ```
 
 ## Trailing Thoughts

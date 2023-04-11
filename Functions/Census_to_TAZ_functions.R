@@ -117,6 +117,7 @@ min_data <- function(geog) {
   return(min)
 }
 
+# GET INCOME DATA ####
 inc_data <- function(geog) {
   
   # C17002_001 Estimate!!Total: RATIO OF INCOME TO POVERTY LEVEL IN THE PAST 12 MONTHS
@@ -139,6 +140,23 @@ inc_data <- function(geog) {
   
   
   return(inc_acs)
+}
+
+# GET TOTAL POPULATION DATA ####
+pop_data <- function(geog) {
+  
+  dec_var <- "P2_001N"
+  
+  dec_raw <- get_decennial(geography = geog,
+                           variables = dec_var,
+                           state = c("MA", "RI", "NH"),
+                           geometry = FALSE,
+                           year = 2020) %>% 
+    select(GEOID, NAME, pop_dec = value)
+  
+  dec_raw$GEOID <- as.numeric(dec_raw$GEOID)
+  
+  return(dec_raw)
 }
 
 
@@ -191,4 +209,14 @@ results_inc <- function(TAZ_results) {
   
   return(TAZ_results_summ)
   
+}
+
+results_pop <- function(TAZ_results) {
+  
+  TAZ_results_summ <- TAZ_results %>% 
+    group_by(ID) %>% 
+    # allocation method
+    summarize(n = n(), TAZ_pop_dec = sum(pop_dec_alloc, na.rm=TRUE))
+  
+  return(TAZ_results_summ)
 }
