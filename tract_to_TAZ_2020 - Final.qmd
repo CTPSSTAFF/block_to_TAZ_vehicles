@@ -330,7 +330,9 @@ TAZ_results_summ_min <- results_min(TAZ_results_min)
 TAZ_results_summ_inc <- results_inc(TAZ_results_inc)
 TAZ_results_summ_pop <- results_pop(TAZ_results_pop)
 
-
+write_csv(TAZ_results_summ_min, "output/data/FINAL/TAZ_minority.csv")
+write_csv(TAZ_results_summ_inc, "output/data/FINAL/TAZ_lowincome.csv")
+write_csv(TAZ_results_summ_pop, "output/data/FINAL/TAZ_decennial_population.csv")
 
 
 ```
@@ -404,8 +406,8 @@ pop_dec_tract <- mapview(tract_pop_map, zcol = "pop_dec", at = seq(0,14000,2800)
 sync(TAZ_pop_dec, pop_dec_tract) # 2 panels synchronised
 
 
-saveRDS(TAZ_min_map, "Output/data/FINAL/TAZ_minority.rds")
-saveRDS(TAZ_inc_map, "Output/data/FINAL/TAZ_lowincome.rds")
+saveRDS(TAZ_min_map, "Output/data/FINAL/TAZ_minority_map.rds")
+saveRDS(TAZ_inc_map, "Output/data/FINAL/TAZ_lowincome_map.rds")
 
 
 ```
