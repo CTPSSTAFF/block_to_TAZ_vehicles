@@ -2,6 +2,9 @@
 # GETTING CENSUS GEOGRAPHIES ####
 region_tracts <- function(year, TAZ) {
   
+  # Obtain the 2020 tracts from the tigris package.
+  # The CB false (the more detailed) geometry looked like it matched up better, so we move forward with that path.
+  
   tracts_MA <- tigris::tracts(state = "MA", 
                               cb = FALSE, 
                               year = year) %>% 
