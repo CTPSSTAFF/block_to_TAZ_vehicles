@@ -95,11 +95,12 @@ Potential Solutions
 ## Running the Script
 
 The work for this project is contained in a quarto doc named
-`blkgrp_to_TAZ_2020Update.qmd` in the main directory. The document is
+`tract_to_TAZ_2020 - Final.qmd` in the main directory. The document is
 intended to be run from top to bottom without much hand holding.
 Throughout the script resource-intensive operations are stored as `.rds`
 files. These statements should be turned off for a fresh run. A search
-for `saveRDS` is a way to find these places.
+for `saveRDS` is a way to find these places.  The functions used in this 
+document are contained in `Census_to_TAZ_functions.R` in the functions folder.
 
 The user will need to download the MassGIS rooftops file and load it
 into the `./data/base/` folder.
