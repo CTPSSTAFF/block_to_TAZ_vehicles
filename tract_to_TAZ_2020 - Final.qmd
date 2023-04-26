@@ -1,0 +1,479 @@
+---
+title: "Merging Census Tracts and TAZs"
+author: "Sophie Fox and Steven Andrews"
+date: "`r Sys.Date()`"
+format: 
+  html: 
+    self-contained: true
+editor: visual
+---
+
+## General Goal
+
+The TDM outputs results at a TAZ level. However, for equity analyses, we need to allocated census demographics to those TAZs--the model does not output results based on minority status, income status, or any other status that might be interesting for an equity analysis.
+
+Census geometry does NOT fit neatly into TAZ geometry. We would like to allocate pieces of census demographics to surrounding TAZs to create demographics of the TAZs. We need to create a table that we can use to allocate portions of census geometry into TAZs.
+
+**Problems:**
+
+-   TAZs are mostly made up of census tracts, but they're not exactly made up of tracts.
+-   There are small tweaks to the TAZ geometry throughout the model region that mean lines do not overlap exactly.
+-   Census blocks are NOT necessarily the best starting point because the differential privacy features of the 2020 census have rendered them unreliable.
+-   TAZs may be smaller than a census geometry.
+
+**Constraints:**
+
+-   TAZ geometry may change over time. The process should be repeatable for arbitrary TAZ geometry (this essentially means for ANY geometry).
+
+-   We want the process to be maintainable over multiple ACS iterations.
+
+**Potential Solutions**
+
+When joining 2010 census blocks to TAZs, Paul Reim performed a series of intersections to identify where blocks were split. Where a TAZ split a block, he counted rooftops and used StreetView to estimate how many rooftops were in each TAZ. It is not desirable to maintain such a process--the reproducibility is limited and its highly manual.
+
+We have decided to focus on **land area** as the method to allocate census populations to different TAZs.
+
+### Useful references
+
+-   massgis census: <https://www.mass.gov/info-details/massgis-data-2020-us-census>
+
+## Set up Packages
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(tidycensus)
+library(tigris)
+library(mapview)
+library(sf)
+library(units)
+library(rgeos)
+library(sp)
+library(mapview)
+library(leafsync)
+library(ggplot2)
+library(dplyr)
+```
+
+## Load Census and TAZ
+
+```{r}
+#| results: hide
+ 
+source("Functions/Census_to_TAZ_functions.R")
+
+
+#Load TAZ shapes
+TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg") %>% 
+  st_transform(26986) %>% 
+  filter(STATE %in% c("MA", "RI", "NH")) %>% # Filtering to only in MA, RI, and NH
+  filter(TAZ_TYPE == "Internal_Centroid")
+  
+TAZ$TAZ_area <- st_area(TAZ)
+  #filter(ID == 4398) # Filtering for one example
+
+# OBtain the 2020 tracts and block groups from the tigris package.
+# The CB false (the more detailed) geometry looked like it matched up better, so we move forward with that path.
+
+# functions
+#tracts <- region_tracts(2020, TAZ)
+#mapview(tracts)
+
+# saveRDS(tracts, "data/processed/tracts.rds")
+
+tracts <- readRDS("data/processed/tracts.rds")
+
+mapview(tracts)
+```
+
+## Calculate Intersecting Areas
+
+### Find Area of Census Tracts
+
+We find the area of the census tracts and block groups. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
+
+```{r}
+tracts$TRACT_TOTAL_AREA <- (st_area(tracts))
+
+```
+
+### Intersect Census Tracts & Block Groups with TAZ
+
+```{r}
+# Intersection_func function
+#intersections_tract <- intersection_func(TAZ, geog = tracts)
+
+# saveRDS(intersections_tract, "data/processed/intersect_tract.rds")
+# saveRDS(intersections_BG, "data/processed/intersect_BG.rds")
+
+intersections_tract <- readRDS("data/processed/intersect_tract.rds")
+
+```
+
+We now have the full area of the tracts and the area of the intersections.
+
+### Erase Water From Intersections
+
+We can now remove the water from the intersections. By doing this now, we only remove the water area once. We eliminate all of the water area.
+
+```{r}
+water <-
+  area_water(
+    state = "MA",
+    year = 2020,
+    county = fips_codes |> 
+      filter(state == "MA") |> 
+      select(county_code) |> pull()
+  ) |> st_drop_geometry()
+
+# Sort our water find the share of the area and the percentile of each body of water.
+water <- water |> 
+  arrange(desc(AWATER)) |> 
+  mutate(share_of_area = cumsum(AWATER)/sum(AWATER),
+         ntile = row_number()/n())
+
+ggplot(water, aes(x= ntile, y = share_of_area)) + 
+  geom_point() +
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  coord_cartesian(xlim = c(0,0.25))
+```
+
+```{r}
+
+# intersections_tract_land <- tigris::erase_water(intersections_tract, 
+#                                 area_threshold = 0.8, 
+#                                 year = 2020)
+
+
+
+
+# saveRDS(intersections_tract_land, "data/processed/intersections_tract_land.rds")
+# saveRDS(intersections_BG_land, "data/processed/intersections_BG_land.rds")
+
+intersections_tract_land <- readRDS("data/processed/intersections_tract_land.rds")
+
+```
+
+### Recalculate Land Area for the Intersections
+
+We can now recalculate the area to obtain the land area by intersection.
+
+```{r}
+# tract
+intersections_tract_land$INTERSECTION_LAND_AREA <- st_area(intersections_tract_land)
+
+
+```
+
+### Find Total Land Area for Census Tracts / Block Group
+
+```{r}
+# tract
+intersections_tract_land <- intersections_tract_land %>% 
+  group_by(GEOID) %>% #grouping by tract
+  mutate(TRACT_LAND_AREA = sum(INTERSECTION_LAND_AREA))
+
+
+```
+
+For each intersection area we now have the land area and the full area of the tract/BG and the land area of the tract/BG.
+
+### Rejoin to initial intersection dataset
+
+Bring the full dataset back together. We need to join back to the original intersection to maintain all of the "full area". Some of the areas disappear after water is removed. Without these the areas are not fully accounted for.
+
+```{r}
+
+# tract
+intersections_for_alloc_tract <- intersections_tract |>
+  st_drop_geometry() |>
+  select(Intersection_ID, ID, GEOID, 
+         INTERSECTION_TOTAL_AREA, TRACT_TOTAL_AREA) |>
+  left_join(
+    intersections_tract_land |> 
+      st_drop_geometry() |> 
+      select(Intersection_ID, ID, GEOID, 
+             INTERSECTION_LAND_AREA, TRACT_LAND_AREA),
+    by = c("Intersection_ID", "ID", "GEOID")) 
+
+# Note: there are instances where the intersection total area is less than than the intersection land area
+
+
+
+```
+
+## Allocate Tracts to TAZs
+
+### Allocate based on Area
+
+This calculated the relationship between tracts and TAZs based on land area (LA) and full area (FA). The full area method does have coastal waters stripped away.
+
+```{r}
+
+area_allocation_tract <- intersections_for_alloc_tract |> 
+  group_by(GEOID) |> 
+    mutate(TRACT_LA_pct = 
+             drop_units(INTERSECTION_LAND_AREA / TRACT_LAND_AREA)) |> 
+  select(Intersection_ID, ID, GEOID, 
+         TRACT_LA_pct) |> 
+  group_by(GEOID, ID) |> 
+  summarize(TRACT_LA_pct = sum(TRACT_LA_pct, na.rm = TRUE)) |> 
+  filter(ID %in% TAZ$ID)
+
+
+write_csv(area_allocation_tract, "output/data/area_allocation_tract.csv")
+```
+
+#### Check Results
+
+We want to verify that we have maintained area. We want 100% of the area accounted for. This may be not as true now that we've included extra buffer area. We may want 100% of the area included for the TAZs inside the MPO boundary.
+
+```{r}
+
+flag_tract <- area_allocation_tract |> 
+  group_by(GEOID) |> 
+  summarize(tot_LA_in_tract = sum(TRACT_LA_pct, na.rm = TRUE)) |>
+  ungroup() |> 
+  filter(tot_LA_in_tract < 0.999)
+
+
+```
+
+There are three land_area values that are equal to `0`, rather than `1`. T
+
+##### Explore Areas
+
+```{r}
+example <- intersections %>% 
+  filter(GEOID %in% flag$GEOID)
+  # filter(GEOID == "250277612002")
+
+mapview(TAZ |> 
+          filter(ID %in% example$ID), 
+        col.regions = "red", 
+        layer.name = "TAZ") + 
+  mapview(tracts |> 
+            filter(GEOID %in% example$GEOID),
+          alpha.regions = 0.01, lwd = 3,
+          layer.name = "tracts") + 
+  mapview(example, zcol = "Intersection_ID",
+          layer.name = "Intersection") + 
+  mapview(TAZ |> st_union())
+```
+
+## Finding TAZ Results
+
+```{r}
+
+area_tracts <- read_csv("output/data/area_allocation_tract.csv",
+                 show_col_types = FALSE)
+
+allocation_results_tracts <- area_tracts %>%
+  filter(ID %in% TAZ$ID)
+write_csv(allocation_results_tracts, "output/data/allocation_results_tract.csv")
+
+# Note: I don't think the above does anything
+
+
+
+# Import the census tract info for MA. 
+
+# min_data function
+minority_acs_tract <- min_data("tract")
+
+# inc data function
+lowinc_acs_tract <- inc_data("tract")
+lowinc_acs_tract$GEOID <- as.numeric(lowinc_acs_tract$GEOID)
+
+# pop data function
+total_dec_tract <- pop_data("tract") 
+
+# Join the population to the tracts.
+# Find the minority percentages and their moes for each TAZ.
+# 
+# Note: We reviewed using the boundaries of the MOEs scaled by the coverage, but
+# it had issues with values going under 0 in strange ways, the MOEs seemed smaller
+# than the moe_sum/prop methods, which seemed like an undesirable choice given
+# the other assumptions going on throughout the process. We choose the more straight forward method for simplicity. 
+
+# minority  
+TAZ_results_min <- allocation_results_tracts |> 
+  left_join(minority_acs_tract, by = "GEOID") %>% 
+  # multiply area allocation percentages by estimates
+  mutate(nonmin_alloc = TRACT_LA_pct * nonmin_pop,
+         tot_alloc = TRACT_LA_pct * tot_pop) %>% 
+  # and for the moes
+  mutate(nonmin_moe_alloc = TRACT_LA_pct * nonmin_moe,
+         tot_moe_alloc = TRACT_LA_pct * tot_moe)
+  
+# low inc
+TAZ_results_inc <- allocation_results_tracts |> 
+  left_join(lowinc_acs_tract, by = "GEOID") %>% 
+  # multiply area allocation percentages by estimates
+  mutate(non_lowinc_alloc = TRACT_LA_pct * est_nonlowinc,
+         tot_alloc = TRACT_LA_pct * est_total) %>% 
+  # and for the moes
+  mutate(non_lowinc_moe_alloc = TRACT_LA_pct * moe_nonlowinc,
+         tot_moe_alloc = TRACT_LA_pct * moe_total)
+  
+# total pop
+TAZ_results_pop <- allocation_results_tracts |> 
+  left_join(total_dec_tract, by = "GEOID") %>% 
+  # multiply area allocation percentages by estimates
+  mutate(pop_dec_alloc = TRACT_LA_pct * pop_dec)
+
+
+# sum up estimates and moes for each TAZ
+TAZ_results_summ_min <- results_min(TAZ_results_min)
+TAZ_results_summ_inc <- results_inc(TAZ_results_inc)
+TAZ_results_summ_pop <- results_pop(TAZ_results_pop)
+
+write_csv(TAZ_results_summ_min, "output/data/FINAL/TAZ_minority.csv")
+write_csv(TAZ_results_summ_inc, "output/data/FINAL/TAZ_lowincome.csv")
+write_csv(TAZ_results_summ_pop, "output/data/FINAL/TAZ_decennial_population.csv")
+
+
+```
+
+### Testing
+
+Check that we have retained all of our GEOID area. These values should add up to 100% or 1.0. The areas that do not are very small and may be solved when the script is scaled to include a larger area instead of a single county.
+
+```{r}
+
+flags <- allocation_results_tracts |> 
+  filter(ID %in% TAZ$ID) |>
+  group_by(GEOID) |> 
+  summarize(tot_LA_in_tract = sum(TRACT_LA_pct, na.rm = TRUE)) |>
+  ungroup() |> 
+  filter(tot_LA_in_tract < 0.999 )
+
+mapview(tracts |> filter(GEOID %in% flags$GEOID)) +
+  mapview(TAZ |> st_union(), col.regions = "green") 
+
+```
+
+## Map Comparison
+
+```{r}
+
+# TAZ results
+TAZ_min_map <- TAZ %>% 
+  left_join(TAZ_results_summ_min) 
+
+TAZ_inc_map <- TAZ %>% 
+  left_join(TAZ_results_summ_inc)
+
+TAZ_pop_map <- TAZ %>% 
+  left_join(TAZ_results_summ_pop)
+
+
+# census data
+tract_min_map <- tracts %>% 
+  mutate(GEOID = as.numeric(GEOID)) %>% 
+  left_join(minority_acs_tract) %>% 
+  mutate(pct_min = 1 -  nonmin_pop / tot_pop)
+
+tract_inc_map <- tracts %>% 
+  mutate(GEOID = as.numeric(GEOID)) %>% 
+  left_join(lowinc_acs_tract) %>% 
+  mutate(pct_lowinc = 1 -  est_nonlowinc / est_total)
+  
+tract_pop_map <- tracts %>% 
+  mutate(GEOID = as.numeric(GEOID)) %>% 
+  left_join(total_dec_tract) 
+
+# Minority Percent
+TAZ_min <- mapview(TAZ_min_map, zcol = "min_pct", at = seq(0,1, .2), lwd = 0, legend = TRUE)
+minpct_tract <- mapview(tract_min_map, zcol = "pct_min", at = seq(0,1,0.2),lwd = 0, legend = FALSE)
+
+sync(TAZ_min, minpct_tract) # 2 panels synchronised
+
+
+# lowinc percent
+TAZ_lowinc <- mapview(TAZ_inc_map, zcol = "lowinc_pct", at = seq(0,1, .2), lwd = 0, legend = TRUE)
+lowinc_pct_tract <- mapview(tract_inc_map, zcol = "pct_lowinc", at = seq(0,1,0.2),lwd = 0, legend = FALSE)
+
+sync(TAZ_lowinc, lowinc_pct_tract) # 2 panels synchronised
+
+
+# total pop
+TAZ_pop_dec <- mapview(TAZ_pop_map, zcol = "TAZ_pop_dec", at = seq(0,14000,2800), lwd = 0, legend = FALSE)
+pop_dec_tract <- mapview(tract_pop_map, zcol = "pop_dec", at = seq(0,14000,2800), lwd = 0, legend = FALSE)
+
+sync(TAZ_pop_dec, pop_dec_tract) # 2 panels synchronised
+
+
+saveRDS(TAZ_min_map, "Output/data/FINAL/TAZ_minority_map.rds")
+saveRDS(TAZ_inc_map, "Output/data/FINAL/TAZ_lowincome_map.rds")
+
+
+```
+
+```{r}
+
+TAZ_lowinc2 <- mapview(TAZ_inc_map, zcol = "TAZ_tot",  lwd = 0, at = seq(0,14000,2800), legend = TRUE)
+lowinc_pct_tract2 <- mapview(tract_inc_map, zcol = "est_total", lwd = 0, at = seq(0,14000,2800), legend = FALSE)
+
+sync(TAZ_lowinc2, lowinc_pct_tract2) # 2 panels synchronised
+
+```
+
+## Testing with Grid Points
+
+```{r}
+
+grid <- st_make_grid(TAZ_min_map, what = "centers",  n = c(100, 100), crs = 26986) 
+mapview(grid[tract_pop_map])+ mapview(tract_pop_map, col.regions = "red")
+
+# minority
+grid_min_TAZ <- st_intersection(x = TAZ_min_map, y = grid ) %>% 
+  select(TAZ_min_pct = min_pct, TAZ_min_pct_moe = min_pct_moe)
+grid_min_tract <- st_intersection(x = tract_min_map, y = grid ) %>% 
+  select(tract_pct_min = pct_min)
+
+min_comp <- st_join(grid_min_TAZ, grid_min_tract) %>% 
+  mutate(in_CI = TAZ_min_pct + TAZ_min_pct_moe >= tract_pct_min & TAZ_min_pct - TAZ_min_pct_moe <= tract_pct_min )
+
+
+ggplot(min_comp, aes(x=TAZ_min_pct, y = tract_pct_min, color = in_CI)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+
+
+# low-income
+grid_inc_TAZ <- st_intersection(x = TAZ_inc_map, y = grid ) %>% 
+  select(TAZ_lowinc_pct = lowinc_pct, TAZ_lowinc_pct_moe = lowinc_pct_moe)
+grid_inc_tract <- st_intersection(x = tract_inc_map, y = grid ) %>% 
+  select(tract_pct_lowinc = pct_lowinc)
+
+inc_comp <- st_join(grid_inc_TAZ, grid_inc_tract) %>% 
+  mutate(in_CI = TAZ_lowinc_pct + TAZ_lowinc_pct_moe >= tract_pct_lowinc & TAZ_lowinc_pct - TAZ_lowinc_pct_moe <= tract_pct_lowinc)
+
+ggplot(inc_comp, aes(x=TAZ_lowinc_pct, y = tract_pct_lowinc, color = in_CI)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+
+
+# total pop
+grid_pop_TAZ <- st_intersection(x = TAZ_pop_map, y = grid) 
+grid_pop_tract <- st_intersection(x = tract_pop_map, y = grid) %>% 
+  select(tract_pop_dec = pop_dec)
+  
+pop_comp <- st_join(grid_pop_TAZ, grid_pop_tract) 
+ggplot(pop_comp, aes(x = TAZ_pop_dec, y = tract_pop_dec)) + geom_point() + coord_equal() + geom_abline(slope = 1)
+
+  
+```
+
+## Trailing Thoughts
+
+### Thoughts:
+
+Some TAZs are smaller than census block groups. Do we need to adjust the method of analysis for those cases? It could be the same. Since we are looking for the percentage of the block group that is within the TAZ, then it wouldn't matter if it is smaller or larger. In this case, it just wouldn't also be sharing area with other block groups.
+
+![](images/image-779890944.png)
+
+Path forward: use block groups and tracts. ==
+
+Aggregate by share of estimate and share of MOE: 1) use allocation to calculate new fields: estimate_share, moe_share, estimate_min_share, estimate_max_share 2) use combinations of moe_sum and moe_prop from tidycensus to get to percent of taz in category X. 3) perform basic sums for the "estimate_min,max" version 4) repeat for tracts, blk grps 5) Join data to TAZs 6) Compare the four methods.
+
+Do for income and for min_status.
