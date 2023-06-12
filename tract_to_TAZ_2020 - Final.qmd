@@ -175,7 +175,7 @@ intersections_tract_land <- intersections_tract_land %>%
 
 ```
 
-For each intersection area we now have the land area and the full area of the tract and the land area of the tract.
+For each intersection area we now have the full area of the tract and the land area of the tract.
 
 ### Rejoin to initial intersection dataset
 
