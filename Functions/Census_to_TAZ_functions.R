@@ -100,7 +100,8 @@ intersection_func <- function(TAZ, geog) {
 
 
 # GET MINORITY DATA ####
-
+# we used the ACS data here instead of just the census data because we wanted margins
+# of error, and the decennial doesn't provide them. 
 min_data <- function(geog) {
   
   
