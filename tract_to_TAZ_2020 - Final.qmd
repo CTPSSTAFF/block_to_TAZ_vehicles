@@ -65,11 +65,13 @@ source("Functions/Census_to_TAZ_functions.R")
 
 
 #Load TAZ shapes
+# MA, RI, and some of NH
 TAZ <- sf::read_sf("J:/Shared drives/Data_Requests/TAZ_Shapefiles/R_Script/out/geopackage/TAZ19.gpkg") %>% 
   st_transform(26986) %>% 
   filter(STATE %in% c("MA", "RI", "NH")) %>% # Filtering to only in MA, RI, and NH
   filter(TAZ_TYPE == "Internal_Centroid")
   
+# get area of TAZ in m^2
 TAZ$TAZ_area <- st_area(TAZ)
   #filter(ID == 4398) # Filtering for one example
 
@@ -79,6 +81,7 @@ TAZ$TAZ_area <- st_area(TAZ)
 
 # saveRDS(tracts, "data/processed/tracts.rds")
 
+# getting tracts for MA, RI, and part of NH
 tracts <- readRDS("data/processed/tracts.rds")
 
 mapview(tracts)
@@ -113,7 +116,7 @@ We now have the full area of the tracts and the area of the intersections.
 
 ### Erase Water From Intersections
 
-We can now remove the water from the intersections. By doing this now, we only remove the water area once. We eliminate all of the water area.
+We can now remove the water from the intersections. By doing this now, we only remove the water area once. We eliminate the top 80% of the water area.
 
 ```{r}
 water <-
@@ -213,6 +216,7 @@ area_allocation_tract <- intersections_for_alloc_tract |>
   select(Intersection_ID, ID, GEOID, 
          TRACT_LA_pct) |> 
   group_by(GEOID, ID) |> 
+  # summing if the same tract/TAZ pair comes up multiple times
   summarize(TRACT_LA_pct = sum(TRACT_LA_pct, na.rm = TRUE)) |> 
   filter(ID %in% TAZ$ID)
 
@@ -235,7 +239,7 @@ flag_tract <- area_allocation_tract |>
 
 ```
 
-There are three land_area values that are equal to `0`, rather than `1`. T
+There are three land_area values that are equal to `0`, rather than `1`. They are in the water.
 
 ## Finding TAZ Results
 
