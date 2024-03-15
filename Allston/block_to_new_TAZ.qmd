@@ -256,15 +256,31 @@ final_orig <- area_allocation_block_orig %>%
   filter(taz_id %in% c(246, 6200))
 
 final_new <- area_allocation_block_new %>% 
-  filter(taz_id %in% c(246, 6200))
+  filter(taz_id %in% c(246, 6200)) %>% 
+  rename(block_id = GEOID10, area_fct = BLOCK_LA_pct)
 
 # Compare the original allocations 
-base_allocations <- read_csv("J:/Shared drives/TMD_TSA/Releases/TDM23/tdm23.1.0/tdm23/inputs/zonal/shp/taz_2010block_allocation_20230314.csv") %>% 
-  filter(taz_id == 246)
-  filter(block_id %in% final_orig$GEOID10)
+base_allocations <- read_csv("J:/Shared drives/TMD_TSA/Releases/TDM23/tdm23.1.0/tdm23/inputs/zonal/shp/taz_2010block_allocation_20230314.csv", col_types = "ccn") %>% 
+  mutate(taz_id = as.numeric(taz_id)) #%>% 
+  # filter(taz_id == 246)
+  # filter(block_id %in% final_orig$GEOID10)
 
 
 # write_csv(area_allocation_tract, "output/data/FINAL/area_allocation_tract.csv")
+```
+
+#### Replace Base Allocations with New Ones for TAZs of interest
+
+```{r}
+
+
+final_results <- base_allocations %>% 
+  filter(taz_id != 246) %>% 
+  bind_rows(final_new) %>% 
+  mutate(block_id = as.numeric(block_id))
+
+
+# The original "base" allocation work had 38 blocks intersecting with TAZ 246. With our method, the unsplit TAZ has 45 intersections. With the split, there were 34 blocks intersecting with TAZ 246, and 24 split with TAZ 6200. The 58 allocations are replacing the 38 in the original "base" work. 
 ```
 
 #### Check Results
