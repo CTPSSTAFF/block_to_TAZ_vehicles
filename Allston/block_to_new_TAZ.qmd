@@ -279,6 +279,7 @@ final_results <- base_allocations %>%
   bind_rows(final_new) %>% 
   mutate(block_id = as.numeric(block_id))
 
+write_csv(final_results, "Output/taz_2010block_allocation_newsplit_20240315.csv")
 
 # The original "base" allocation work had 38 blocks intersecting with TAZ 246. With our method, the unsplit TAZ has 45 intersections. With the split, there were 34 blocks intersecting with TAZ 246, and 24 split with TAZ 6200. The 58 allocations are replacing the 38 in the original "base" work. 
 ```
