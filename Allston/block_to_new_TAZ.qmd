@@ -1,0 +1,359 @@
+---
+title: "Rerunning Analysis with New TAZ"
+author: "Sophie Fox"
+date: "`r Sys.Date()`"
+format: 
+  html: 
+    self-contained: true
+editor: visual
+---
+
+## General Goal
+
+For TDM 23, a new TAZ was created by splitting one into two sections. This script will run the census to TAZ allocation for the old set of TAZs and the new set of TAZs. The results should be almost identical, as only one TAZ is changing.
+
+There will also be a comparison to the old allocation to our method. These results might be slightly different, since two different methods are involved.
+
+### Useful references
+
+-   massgis census: <https://www.mass.gov/info-details/massgis-data-2020-us-census>
+
+## Set up Packages
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(tidycensus)
+library(tigris)
+library(mapview)
+library(sf)
+library(units)
+library(rgeos)
+library(sp)
+library(mapview)
+library(leafsync)
+library(ggplot2)
+library(dplyr)
+```
+
+## Load Census and TAZ
+
+```{r}
+#| results: hide
+ 
+source("Functions/Census_to_TAZ_functions.R")
+
+
+#Load TAZ shapes
+# MA, RI, and some of NH
+# TAZ_new contains the new split TAZ. TAZ_original has the old TAZs
+# The file also is already filtered to the MA, RI, and NH area
+TAZ_original <- sf::read_sf("J:/Shared drives/TMD_TSA/Releases/TDM23/tdm23.1.0/tdm23/inputs/zonal/shp/CTPS_TDM23_TAZ_2017g_V202303.shp") %>% 
+  st_transform(26986)
+
+TAZ_new <- sf::read_sf("J:/Shared drives/TMD_TSA/Projects/MassDOT OnCall/Allston TDM23/scratch/for_Sophie/edited_shape/Final/edited_shape_final.shp") %>% 
+  st_transform(26986)
+
+# getting blocks for MA, RI, and part of NH
+blocks <- sf::read_sf("J:/Shared drives/TMD_TSA/Data/GIS Data/census_blk/CENSUS2010BLOCKS_POLY.shp") 
+
+# get area of TAZ in m^2
+TAZ_original$TAZ_area <- st_area(TAZ_original)
+TAZ_new$TAZ_area <- st_area(TAZ_new)
+
+
+# Need to get the TAZs and blocks of interest. That means every block that intersects with TAZs 6200 and 246, and every TAZ that intersects with those blocks
+blocks_of_interest <- blocks[TAZ_original %>% filter(taz_id %in% c(246, 6200)), ]
+
+TAZ_of_interest_original <- TAZ_original[blocks_of_interest,]
+TAZ_of_interest_new <- TAZ_new[blocks_of_interest,]
+
+mapview(TAZ_of_interest_original, col.regions = "red") + TAZ_of_interest_new
+
+
+
+
+#mapview(blocks)
+```
+
+## Calculate Intersecting Areas
+
+### Find Area of Census Tracts
+
+We find the area of the census tracts. This area will not necessarily match areas reported by the census because of how the coastline is handled and how inland water is handled.
+
+```{r}
+blocks_of_interest$BLOCK_TOTAL_AREA <- (st_area(blocks_of_interest))
+
+```
+
+### Intersect Census Tracts with TAZ
+
+```{r}
+
+# Intersection_func function
+intersections_block_orig <- intersection_func(TAZ_of_interest_original, geog = blocks_of_interest)
+intersections_block_new <- intersection_func(TAZ_of_interest_new, geog = blocks_of_interest)
+
+
+
+# Showing the difference in intersections between original and new
+mapview(intersections_block_orig, col.regions = "red") + mapview(intersections_block_new, col.regions = "yellow") + mapview(blocks_of_interest, col.regions = "green") + TAZ_of_interest_original + TAZ_of_interest_new + mapview(blocks %>%  filter(GEOID10 == 250173421021085), col.regions = "pink")
+
+
+# saveRDS(intersections_tract, "data/processed/intersect_tract.rds")
+
+#intersections_tract <- readRDS("data/processed/intersect_tract.rds")
+
+```
+
+We now have the full area of the tracts and the area of the intersections.
+
+### Erase Water From Intersections
+
+We can now remove the water from the intersections. By doing this now, we only remove the water area once. We eliminate the top 80% of the water area.
+
+```{r}
+water <-
+  area_water(
+    state = "MA",
+    year = 2020,
+    county = fips_codes |> 
+      filter(state == "MA") |> 
+      select(county_code) |> pull()
+  ) |> st_drop_geometry()
+
+# Sort our water find the share of the area and the percentile of each body of water.
+water <- water |> 
+  arrange(desc(AWATER)) |> 
+  mutate(share_of_area = cumsum(AWATER)/sum(AWATER),
+         ntile = row_number()/n())
+
+ggplot(water, aes(x= ntile, y = share_of_area)) + 
+  geom_point() +
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  coord_cartesian(xlim = c(0,0.25))
+```
+
+```{r}
+
+# Erasing water
+
+# intersections_block_land_orig <- tigris::erase_water(intersections_block_orig,
+#                                 area_threshold = 0.8,
+#                                 year = 2020)
+
+intersections_block_land_orig <- intersections_block_orig
+
+intersections_block_land_new <- tigris::erase_water(intersections_block_new,
+                                area_threshold = 0.8,
+                                year = 2020)
+
+mapview(intersections_block_land_orig, col.regions = "red") + intersections_block_land_new
+```
+
+### Recalculate Land Area for the Intersections
+
+We can now recalculate the area to obtain the land area by intersection.
+
+```{r}
+
+intersections_block_land_orig$INTERSECTION_LAND_AREA <- st_area(intersections_block_land_orig)
+
+intersections_block_land_new$INTERSECTION_LAND_AREA <- st_area(intersections_block_land_new)
+
+```
+
+### Find Total Land Area for Blocks
+
+```{r}
+
+intersections_block_land_orig <- intersections_block_land_orig %>% 
+  group_by(GEOID10) %>% #grouping by block
+  mutate(BLOCK_LAND_AREA = sum(INTERSECTION_LAND_AREA))
+
+intersections_block_land_new <- intersections_block_land_new %>% 
+  group_by(GEOID10) %>% #grouping by block
+  mutate(BLOCK_LAND_AREA = sum(INTERSECTION_LAND_AREA))
+
+```
+
+For each intersection area we now have the full area of the block and the land area of the block.
+
+### Rejoin to initial intersection dataset
+
+Bring the full dataset back together. We need to join back to the original intersection to maintain all of the "full area". Some of the areas disappear after water is removed. Without these the areas are not fully accounted for.
+
+```{r}
+
+intersections_for_alloc_block_orig <- intersections_block_orig |>
+  st_drop_geometry() |>
+  select(Intersection_ID, taz_id, GEOID10, 
+         INTERSECTION_TOTAL_AREA, BLOCK_TOTAL_AREA) |>
+  left_join(
+    intersections_block_land_orig |> 
+      st_drop_geometry() |> 
+      select(Intersection_ID, taz_id, GEOID10, 
+             INTERSECTION_LAND_AREA, BLOCK_LAND_AREA),
+    by = c("Intersection_ID", "taz_id", "GEOID10")) 
+
+
+intersections_for_alloc_block_new <- intersections_block_new |>
+  st_drop_geometry() |>
+  select(Intersection_ID, taz_id, GEOID10, 
+         INTERSECTION_TOTAL_AREA, BLOCK_TOTAL_AREA) |>
+  left_join(
+    intersections_block_land_new |> 
+      st_drop_geometry() |> 
+      select(Intersection_ID, taz_id, GEOID10, 
+             INTERSECTION_LAND_AREA, BLOCK_LAND_AREA),
+    by = c("Intersection_ID", "taz_id", "GEOID10")) 
+
+
+
+
+# Note: there are instances where the intersection total area is less than than the intersection land area
+
+```
+
+## Allocate Blocks to TAZs
+
+### Allocate based on Land Area
+
+This calculated the relationship between blocks and TAZs based on land area (LA).
+
+```{r}
+
+area_allocation_block_orig <- intersections_for_alloc_block_orig |> 
+  group_by(GEOID10) |> 
+    mutate(BLOCK_LA_pct = 
+             drop_units(INTERSECTION_LAND_AREA / BLOCK_LAND_AREA)) |> 
+  select(Intersection_ID, taz_id, GEOID10, 
+         BLOCK_LA_pct) |> 
+  group_by(GEOID10, taz_id) |> 
+  # summing if the same tract/TAZ pair comes up multiple times
+  summarize(BLOCK_LA_pct = sum(BLOCK_LA_pct, na.rm = TRUE)) # |> 
+  #filter(ID %in% TAZ_of_interest_original$ID)
+
+
+area_allocation_block_new <- intersections_for_alloc_block_new |> 
+  group_by(GEOID10) |> 
+    mutate(BLOCK_LA_pct = 
+             drop_units(INTERSECTION_LAND_AREA / BLOCK_LAND_AREA)) |> 
+  select(Intersection_ID, taz_id, GEOID10, 
+         BLOCK_LA_pct) |> 
+  group_by(GEOID10, taz_id) |> 
+  # summing if the same tract/TAZ pair comes up multiple times
+  summarize(BLOCK_LA_pct = sum(BLOCK_LA_pct, na.rm = TRUE)) # |> 
+  #filter(ID %in% TAZ_of_interest_original$ID)
+
+
+# filter to only look at the TAZ's that were changed
+
+final_orig <- area_allocation_block_orig %>% 
+  filter(taz_id %in% c(246, 6200))
+
+final_new <- area_allocation_block_new %>% 
+  filter(taz_id %in% c(246, 6200))
+
+# Compare the original allocations 
+base_allocations <- read_csv("J:/Shared drives/TMD_TSA/Releases/TDM23/tdm23.1.0/tdm23/inputs/zonal/shp/taz_2010block_allocation_20230314.csv") %>% 
+  filter(taz_id == 246)
+  filter(block_id %in% final_orig$GEOID10)
+
+
+# write_csv(area_allocation_tract, "output/data/FINAL/area_allocation_tract.csv")
+```
+
+#### Check Results
+
+We want to verify that we have maintained area. We want 100% of the area accounted for. This may be not as true now that we've included extra buffer area. We may want 100% of the area included for the TAZs inside the MPO boundary.
+
+```{r}
+
+flag_tract <- area_allocation_tract |> 
+  group_by(GEOID) |> 
+  summarize(tot_LA_in_tract = sum(TRACT_LA_pct, na.rm = TRUE)) |>
+  ungroup() |> 
+  filter(tot_LA_in_tract < 0.999)
+
+
+```
+
+There are three land_area values that are equal to `0`, rather than `1`. They are in the water.
+
+## Finding TAZ Results
+
+```{r}
+
+area_tracts <- read_csv("output/data/FINAL/area_allocation_tract.csv",
+                 show_col_types = FALSE)
+
+allocation_results_tracts <- area_tracts %>%
+  filter(ID %in% TAZ$ID)
+write_csv(allocation_results_tracts, "output/data/FINAL/allocation_results_tract.csv")
+
+# Note: I don't think the above does anything
+
+
+
+# Import the census tract info for MA. 
+
+# min_data function
+minority_acs_tract <- min_data("tract")
+
+# inc data function
+lowinc_acs_tract <- inc_data("tract")
+lowinc_acs_tract$GEOID <- as.numeric(lowinc_acs_tract$GEOID)
+
+# pop data function
+total_dec_tract <- pop_data("tract") 
+
+# Join the population to the tracts.
+
+# 
+# Note: We reviewed using the boundaries of the MOEs scaled by the coverage, but
+# it had issues with values going under 0 in strange ways, the MOEs seemed smaller
+# than the moe_sum/prop methods, which seemed like an undesirable choice given
+# the other assumptions going on throughout the process. We choose the more straight forward method for simplicity. 
+
+# minority  
+TAZ_results_min <- allocation_results_tracts |> 
+  left_join(minority_acs_tract, by = "GEOID") %>% 
+  # multiply area allocation percentages by estimates
+  mutate(nonmin_alloc = TRACT_LA_pct * nonmin_pop,
+         tot_alloc = TRACT_LA_pct * tot_pop) %>% 
+  # and for the moes
+  mutate(nonmin_moe_alloc = TRACT_LA_pct * nonmin_moe,
+         tot_moe_alloc = TRACT_LA_pct * tot_moe)
+  
+# low inc
+TAZ_results_inc <- allocation_results_tracts |> 
+  left_join(lowinc_acs_tract, by = "GEOID") %>% 
+  # multiply area allocation percentages by estimates
+  mutate(non_lowinc_alloc = TRACT_LA_pct * est_nonlowinc,
+         tot_alloc = TRACT_LA_pct * est_total) %>% 
+  # and for the moes
+  mutate(non_lowinc_moe_alloc = TRACT_LA_pct * moe_nonlowinc,
+         tot_moe_alloc = TRACT_LA_pct * moe_total)
+  
+# total pop
+TAZ_results_pop <- allocation_results_tracts |> 
+  left_join(total_dec_tract, by = "GEOID") %>% 
+  # multiply area allocation percentages by estimates
+  mutate(pop_dec_alloc = TRACT_LA_pct * pop_dec)
+
+
+# sum up estimates and moes for each TAZ
+TAZ_results_summ_min <- results_min(TAZ_results_min)
+TAZ_results_summ_inc <- results_inc(TAZ_results_inc)
+TAZ_results_summ_pop <- results_pop(TAZ_results_pop)
+
+write_csv(TAZ_results_summ_min, "output/data/FINAL/TAZ_minority.csv")
+write_csv(TAZ_results_summ_inc, "output/data/FINAL/TAZ_lowincome.csv")
+write_csv(TAZ_results_summ_pop, "output/data/FINAL/TAZ_decennial_population.csv")
+
+
+```
