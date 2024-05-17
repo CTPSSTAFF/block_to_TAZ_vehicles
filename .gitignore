@@ -18,3 +18,4 @@ blkgrp_to_TAZ_2020Update.html
 data/processed/rooftops_MPO.rds
 complete_run_checkpoint.RData
 data/processed/Old Data/rooftops.rds
+.RDataTmp

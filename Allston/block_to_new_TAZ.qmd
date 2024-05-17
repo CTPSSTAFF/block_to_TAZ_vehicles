@@ -266,7 +266,23 @@ base_allocations <- read_csv("J:/Shared drives/TMD_TSA/Releases/TDM23/tdm23.1.0/
   # filter(block_id %in% final_orig$GEOID10)
 
 
-# write_csv(area_allocation_tract, "output/data/FINAL/area_allocation_tract.csv")
+TAZ_changed <- TAZ_of_interest_new %>% filter(taz_id %in% c(6200, 246))
+
+ mapview(intersections_block_new, col.regions = "green") +
+  mapview(TAZ_changed, col.regions = "blue")
+
+ blocks_to_remove <- final_new$block_id[final_new$taz_id == 6200 & final_new$area_fct < 0.01]
+
+ blocks_to_remove <- c(blocks_to_remove, 250250008021001, 250250008021000)
+ # 7 blocks to remove from the new tazs (6 in 6200, 1 in 246)
+    
+mapview(intersections_block_new %>% filter(GEOID10 %in% blocks_to_remove &
+                                             taz_id %in% c(6200, 246)), col.regions = "orange") + mapview(TAZ_changed)
+
+final_new_trimmed <- final_new %>% filter(!(block_id %in% blocks_to_remove)) %>% 
+  mutate(block_id = as.character(block_id))
+
+
 ```
 
 #### Replace Base Allocations with New Ones for TAZs of interest
@@ -276,10 +292,8 @@ base_allocations <- read_csv("J:/Shared drives/TMD_TSA/Releases/TDM23/tdm23.1.0/
 
 final_results <- base_allocations %>% 
   filter(taz_id != 246) %>% 
-  bind_rows(final_new) %>% 
-  mutate(block_id = as.numeric(block_id))
+  bind_rows(final_new_trimmed) 
 
-write_csv(final_results, "Allston/Output/taz_2010block_allocation_newsplit_20240315.csv")
 
 # The original "base" allocation work had 38 blocks intersecting with TAZ 246. With our method, the unsplit TAZ has 45 intersections. With the split, there were 34 blocks intersecting with TAZ 246, and 24 split with TAZ 6200. The 58 allocations are replacing the 38 in the original "base" work. 
 ```
@@ -290,87 +304,85 @@ We want to verify that we have maintained area. We want 100% of the area account
 
 ```{r}
 
-flag_tract <- area_allocation_tract |> 
-  group_by(GEOID) |> 
-  summarize(tot_LA_in_tract = sum(TRACT_LA_pct, na.rm = TRUE)) |>
-  ungroup() |> 
-  filter(tot_LA_in_tract < 0.999)
+#blocks_in_new_tazs <- final_results$block_id[final_results$taz_id %in% c(246, 6200)]
 
+final_results_summed <- final_results %>% 
+  #filter(block_id %in% blocks_in_new_tazs) %>% 
+  group_by(block_id) %>% 
+  summarise(summed_pct_new = sum(area_fct))
 
+# compare to base
+base_allocations_summed <- base_allocations %>% 
+  #filter(block_id %in% blocks_in_new_tazs) %>% 
+  group_by(block_id) %>% 
+  summarise(summed_pct_base = sum(area_fct))
+
+# Comparison
+comp_sum <- full_join(final_results_summed, base_allocations_summed) %>% 
+  mutate(same = summed_pct_base == summed_pct_new) %>% 
+  filter(same == FALSE) %>% 
+  mutate(diff = summed_pct_new - summed_pct_base)
+
+unequal_blocks <- blocks %>% filter(GEOID10 %in% comp_sum$block_id)
+mapview(unequal_blocks, col.regions = "red") + mapview(TAZ_changed)
 ```
 
 There are three land_area values that are equal to `0`, rather than `1`. They are in the water.
 
-## Finding TAZ Results
+\###################################################################
+
+## New Method- Manual Sorting
 
 ```{r}
 
-area_tracts <- read_csv("output/data/FINAL/area_allocation_tract.csv",
-                 show_col_types = FALSE)
-
-allocation_results_tracts <- area_tracts %>%
-  filter(ID %in% TAZ$ID)
-write_csv(allocation_results_tracts, "output/data/FINAL/allocation_results_tract.csv")
-
-# Note: I don't think the above does anything
-
-
-
-# Import the census tract info for MA. 
-
-# min_data function
-minority_acs_tract <- min_data("tract")
-
-# inc data function
-lowinc_acs_tract <- inc_data("tract")
-lowinc_acs_tract$GEOID <- as.numeric(lowinc_acs_tract$GEOID)
-
-# pop data function
-total_dec_tract <- pop_data("tract") 
-
-# Join the population to the tracts.
-
-# 
-# Note: We reviewed using the boundaries of the MOEs scaled by the coverage, but
-# it had issues with values going under 0 in strange ways, the MOEs seemed smaller
-# than the moe_sum/prop methods, which seemed like an undesirable choice given
-# the other assumptions going on throughout the process. We choose the more straight forward method for simplicity. 
-
-# minority  
-TAZ_results_min <- allocation_results_tracts |> 
-  left_join(minority_acs_tract, by = "GEOID") %>% 
-  # multiply area allocation percentages by estimates
-  mutate(nonmin_alloc = TRACT_LA_pct * nonmin_pop,
-         tot_alloc = TRACT_LA_pct * tot_pop) %>% 
-  # and for the moes
-  mutate(nonmin_moe_alloc = TRACT_LA_pct * nonmin_moe,
-         tot_moe_alloc = TRACT_LA_pct * tot_moe)
+base_allocations <- read_csv("J:/Shared drives/TMD_TSA/Releases/TDM23/tdm23.1.0/tdm23/inputs/zonal/shp/taz_2010block_allocation_20230314.csv", col_types = "ccn") %>% 
+  mutate(taz_id = as.numeric(taz_id))
   
-# low inc
-TAZ_results_inc <- allocation_results_tracts |> 
-  left_join(lowinc_acs_tract, by = "GEOID") %>% 
-  # multiply area allocation percentages by estimates
-  mutate(non_lowinc_alloc = TRACT_LA_pct * est_nonlowinc,
-         tot_alloc = TRACT_LA_pct * est_total) %>% 
-  # and for the moes
-  mutate(non_lowinc_moe_alloc = TRACT_LA_pct * moe_nonlowinc,
-         tot_moe_alloc = TRACT_LA_pct * moe_total)
-  
-# total pop
-TAZ_results_pop <- allocation_results_tracts |> 
-  left_join(total_dec_tract, by = "GEOID") %>% 
-  # multiply area allocation percentages by estimates
-  mutate(pop_dec_alloc = TRACT_LA_pct * pop_dec)
+Allston_TAZs <- sf::read_sf("J:/Shared drives/TMD_TSA/Projects/MassDOT OnCall/Allston TDM23/scratch/for_Sophie/edited_shape/Final/edited_shape_final.shp") %>% 
+  st_transform(26986)%>% 
+  filter(taz_id %in% c(246, 6200))
+
+blocks <- sf::read_sf("J:/Shared drives/TMD_TSA/Data/GIS Data/census_blk/CENSUS2010BLOCKS_POLY.shp") 
+
+# blocks in the base allocations that intersect with taz 246
+base_blocks_filtered <-  base_allocations %>% 
+  filter(taz_id %in% c(246, 6200))
+# 38 blocks
+
+# blocks of those 38 that do not include the water blocks, since those are not in the original blocks dataset
+base_allocations_filtered <- blocks %>% 
+  filter(GEOID10 %in% base_blocks_filtered$block_id)
+# 35 blocks
+
+# mapping the three missing blocks. They are in the water
+# missing <- tigris::blocks(state = 25, county = 25, year = 2010) |> filter(GEOID10 %in% c(250259815011056, 250259815011036,250259815011035)) |> mapview::mapview(zcol = "GEOID10") 
+
+# blocks that overlap with the two Allson TAZs
+blocks_to_sort_overlap <- blocks[Allston_TAZs,]
+# 45 blocks
+
+mapview(blocks_to_sort_overlap, col.regions = "orange") + mapview(base_allocations_filtered, col.regions = "purple") + mapview(Allston_TAZs)
+# There are ten blocks (orange), that barely overlap with the TAZs, but aren't included in the original allocations as intersecting with 246. So we will be leavin g those alone. 
+
+# Using base_allocations_filtered
+mapview(base_allocations_filtered, col.regions = "green") + mapview(Allston_TAZs , zcol = "taz_id")
+
+taz_6200_blocks <- c(250250008031040, 250250008031031, 250250008031032, 250250008031034, 250250008031018, 250250008032004, 250250008032003, 250250008032012, 250250008032011 )
+
+new_6200 <- base_allocations_filtered %>% filter(GEOID10 %in% taz_6200_blocks)
+
+new_246 <- base_allocations_filtered %>% filter(!(GEOID10 %in% taz_6200_blocks))
+
+mapview(new_6200, col.regions = "red") + mapview(new_246, col.regions = "orange") + mapview(Allston_TAZs)
 
 
-# sum up estimates and moes for each TAZ
-TAZ_results_summ_min <- results_min(TAZ_results_min)
-TAZ_results_summ_inc <- results_inc(TAZ_results_inc)
-TAZ_results_summ_pop <- results_pop(TAZ_results_pop)
+new_allocations <- base_allocations %>% 
+  mutate(taz_id = if_else(taz_id == 246 & block_id %in% taz_6200_blocks,
+                          6200,
+                          taz_id)
+         )
 
-write_csv(TAZ_results_summ_min, "output/data/FINAL/TAZ_minority.csv")
-write_csv(TAZ_results_summ_inc, "output/data/FINAL/TAZ_lowincome.csv")
-write_csv(TAZ_results_summ_pop, "output/data/FINAL/TAZ_decennial_population.csv")
+write_csv(new_allocations, "C:/Users/sfox.AD/Documents/GitHub/block_to_TAZ_vehicles/Allston/Output/taz_2010block_allocation_newsplit_20240517.csv")
 
 
 ```
